@@ -1,0 +1,85 @@
+# Trading Bot Agent Guide
+
+## Project Purpose
+Build and operate a robust, auditable fundamentals pipeline for current S&P 500 companies, with SEC-first extensibility and reproducible outputs for screening and portfolio research.
+
+## Instruction Chain
+Codex should read instruction files in this order:
+1. Root `AGENTS.md`.
+2. Directory-scoped `AGENTS.override.md` files from root down to current working directory.
+3. Stop at context size limits if reached; prefer nearest override when conflicts exist.
+
+## How To Run
+Setup:
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .[dev]
+```
+
+Main commands:
+```powershell
+python -m trading_bot universe --as-of-date 2026-02-07
+python -m trading_bot legacy-fundamentals --start-date 2023-01-01 --end-date 2025-12-31
+python -m trading_bot full-run --as-of-date 2026-02-07 --start-date 2023-01-01 --end-date 2025-12-31
+```
+
+## Pre-PR Quality Gate
+Required:
+```powershell
+pytest
+python -m compileall src
+```
+
+Linting:
+1. No dedicated linter is configured yet.
+2. If lint tooling is added later, update this section and make it required.
+
+## Dependency Policy
+1. Prefer standard library and existing dependencies first.
+2. Add a new dependency only when:
+   - it removes substantial custom complexity, or
+   - it is required for reliability/security/performance.
+3. New dependency changes must include:
+   - why existing stack is insufficient,
+   - minimal version pin in `pyproject.toml`,
+   - test coverage for introduced behavior.
+
+## Code Style Rules (Non-Obvious)
+1. Keep raw and derived layers separate:
+   - raw canonical fields in ingestion/normalization,
+   - ratios/features only in compute stage.
+2. Preserve auditability:
+   - include source metadata (`filed_date`, `form_type`, source tag/version).
+3. Use deterministic keys for quarterly records:
+   - `ticker`, `fyearq`, `fqtr`.
+4. Never silently overwrite conflicting records:
+   - log or emit a conflict artifact.
+5. Prefer explicit exceptions over `SystemExit` in library code.
+
+## Repo Map
+1. `src/trading_bot/config`: typed settings and mapping config.
+2. `src/trading_bot/services`: external source adapters.
+3. `src/trading_bot/pipelines`: orchestration and dataset builders.
+4. `src/trading_bot/io`: shared logging/exceptions utilities.
+5. `specs`: architecture and execution plans.
+6. `tests`: unit/integration tests.
+7. `data/raw`: source/landing files.
+8. `data/processed`: canonical and transformed tables.
+9. `data/reports`: coverage, QA, and screening outputs.
+10. `.agents/skills`: repo-scoped skills.
+11. `.agent/PLANS.md`: planning standard and ExecPlan format.
+12. `.agent/plans`: execution plan documents for substantial changes.
+
+## Skills
+1. Repo-scoped skills live at `.agents/skills/**/SKILL.md`.
+2. Keep skills short, trigger-based, and workflow-oriented.
+3. Use progressive disclosure: load skill instructions only when triggered by task.
+
+## Planning Standard
+1. For non-trivial work, follow `.agent/PLANS.md`.
+2. Create/update an ExecPlan file in `.agent/plans/` for tasks that:
+   - span multiple modules, or
+   - introduce schema/pipeline behavior changes, or
+   - require phased delivery.
+3. Keep plan status current as work progresses.

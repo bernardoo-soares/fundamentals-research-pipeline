@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+
+# Virtual envs
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data outputs
+data/raw/
+data/universe_current.csv
+data/processed/
+data/reports/
+
+# Local agent/runtime metadata
+.agent/
+.agents/
