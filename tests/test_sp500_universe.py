@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot.pipelines import sp500_universe
+from trading_bot.steps import universe
 
 
 class _FakeConstituents:
@@ -11,9 +11,9 @@ class _FakeConstituents:
 
 
 def test_build_sp500_current_universe_writes_normalized_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(sp500_universe, "SP500Constituents", _FakeConstituents)
+    monkeypatch.setattr(universe, "SP500Constituents", _FakeConstituents)
 
-    df = sp500_universe.build_sp500_current_universe(
+    df = universe.build_sp500_current_universe(
         output_dir=tmp_path,
         as_of_date="2026-02-07",
     )

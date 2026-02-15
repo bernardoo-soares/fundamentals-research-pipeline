@@ -1,3 +1,9 @@
+﻿"""Loader and validator for SEC metric mapping contract YAML.
+
+The contract defines the authoritative mapping between SEC XBRL tags and the
+project's canonical raw quarterly fundamentals fields.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,6 +13,7 @@ from typing import Any
 import yaml
 
 
+# Canonical raw fields pulled directly from source systems (not derived metrics).
 FETCH_ONLY_RAW_FIELDS: tuple[str, ...] = (
     "saleq",
     "niq",
@@ -27,18 +34,26 @@ FETCH_ONLY_RAW_FIELDS: tuple[str, ...] = (
     "tstkq",
     "oancfq",
     "prstkcq",
+    "capxq",
+    "cheq",
+    "dvpq",
+    "cshfdq",
 )
 
+# Helper fields allowed only for fallback logic inside transform rules.
 HELPER_FALLBACK_FIELDS: tuple[str, ...] = (
     "oancfy",
     "prstkcy",
     "cshopq",
+    "cshoq",
 )
 
+# Exact canonical field set the contract must define.
 REQUIRED_CANONICAL_FIELDS: frozenset[str] = frozenset(
     FETCH_ONLY_RAW_FIELDS + HELPER_FALLBACK_FIELDS
 )
 
+# Compute-only fields are explicitly forbidden from SEC mapping contract.
 COMPUTE_ONLY_FIELDS: frozenset[str] = frozenset(
     {
         "Operating_Margin",
@@ -61,6 +76,10 @@ COMPUTE_ONLY_FIELDS: frozenset[str] = frozenset(
         "P/B_Ratio",
         "Dividend_Yield",
         "Earnings_Yield",
+        "Free_Cash_Flow",
+        "Net_Debt",
+        "Dividends_Paid",
+        "Shares_Outstanding_Diluted",
     }
 )
 
@@ -79,6 +98,8 @@ ALLOWED_FORMS: frozenset[str] = frozenset({"10-Q", "10-K"})
 
 @dataclass(frozen=True)
 class MetricMapping:
+    """Typed mapping config for one canonical metric."""
+
     canonical_name: str
     fact_type: str
     unit_priority: tuple[str, ...]
@@ -92,16 +113,20 @@ class MetricMapping:
 
 @dataclass(frozen=True)
 class SecMetricContract:
+    """Root typed representation of the SEC contract file."""
+
     version: str
     description: str
     metrics: dict[str, MetricMapping]
 
 
 def _default_contract_path() -> Path:
+    """Return repository-default SEC contract path."""
     return Path(__file__).with_name("sec_metric_map.yml")
 
 
 def _expect_mapping(value: Any, *, context: str) -> dict[str, Any]:
+    """Assert value is a dictionary-like mapping or raise clear error."""
     if not isinstance(value, dict):
         raise ValueError(f"{context} must be a mapping.")
     return value
@@ -113,10 +138,12 @@ def _expect_sequence(
     context: str,
     min_length: int = 1,
 ) -> tuple[str, ...]:
+    """Validate YAML list fields and normalize non-empty string entries."""
     if not isinstance(value, list):
         raise ValueError(f"{context} must be a list.")
     if len(value) < min_length:
         raise ValueError(f"{context} must include at least {min_length} item(s).")
+
     output = tuple(str(item).strip() for item in value if str(item).strip())
     if len(output) < min_length:
         raise ValueError(f"{context} must include non-empty values.")
@@ -124,6 +151,7 @@ def _expect_sequence(
 
 
 def _parse_metric_mapping(name: str, payload: Any) -> MetricMapping:
+    """Parse one `metrics.<name>` mapping block into `MetricMapping`."""
     data = _expect_mapping(payload, context=f"metrics.{name}")
 
     required_keys = {
@@ -170,27 +198,32 @@ def _parse_metric_mapping(name: str, payload: Any) -> MetricMapping:
 
 
 def _validate_metric_mapping(mapping: MetricMapping) -> None:
+    """Validate per-metric enum constraints and transform dependencies."""
     if mapping.fact_type not in ALLOWED_FACT_TYPES:
         raise ValueError(
             f"metrics.{mapping.canonical_name}.fact_type must be one of "
             f"{sorted(ALLOWED_FACT_TYPES)}."
         )
+
     if mapping.transform_rule not in ALLOWED_TRANSFORM_RULES:
         raise ValueError(
             f"metrics.{mapping.canonical_name}.transform_rule must be one of "
             f"{sorted(ALLOWED_TRANSFORM_RULES)}."
         )
+
     if mapping.quality_tier not in ALLOWED_QUALITY_TIERS:
         raise ValueError(
             f"metrics.{mapping.canonical_name}.quality_tier must be one of "
             f"{sorted(ALLOWED_QUALITY_TIERS)}."
         )
+
     unknown_forms = sorted(set(mapping.form_priority).difference(ALLOWED_FORMS))
     if unknown_forms:
         raise ValueError(
             f"metrics.{mapping.canonical_name}.form_priority contains unsupported "
             f"form(s): {unknown_forms}"
         )
+
     if (
         mapping.transform_rule == "direct_or_sum_components"
         and not mapping.component_tags
@@ -202,6 +235,7 @@ def _validate_metric_mapping(mapping: MetricMapping) -> None:
 
 
 def validate_contract(contract: SecMetricContract) -> None:
+    """Validate whole-contract constraints for field coverage and references."""
     names = frozenset(contract.metrics)
     missing = sorted(REQUIRED_CANONICAL_FIELDS.difference(names))
     extra = sorted(names.difference(REQUIRED_CANONICAL_FIELDS))
@@ -219,6 +253,7 @@ def validate_contract(contract: SecMetricContract) -> None:
 
     for mapping in contract.metrics.values():
         _validate_metric_mapping(mapping)
+
         unknown_helpers = sorted(
             set(mapping.helper_fallbacks).difference(HELPER_FALLBACK_FIELDS)
         )
@@ -227,6 +262,7 @@ def validate_contract(contract: SecMetricContract) -> None:
                 f"metrics.{mapping.canonical_name}.helper_fallbacks has unknown "
                 f"helper field(s): {unknown_helpers}"
             )
+
         missing_helpers = sorted(
             helper for helper in mapping.helper_fallbacks if helper not in names
         )
@@ -238,6 +274,14 @@ def validate_contract(contract: SecMetricContract) -> None:
 
 
 def load_sec_metric_contract(path: str | Path | None = None) -> SecMetricContract:
+    """Load SEC mapping YAML and return validated typed contract.
+
+    Args:
+        path: Optional custom contract file path.
+
+    Returns:
+        Fully validated `SecMetricContract`.
+    """
     mapping_path = Path(path) if path else _default_contract_path()
     raw = yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
     root = _expect_mapping(raw, context="root")
@@ -245,6 +289,7 @@ def load_sec_metric_contract(path: str | Path | None = None) -> SecMetricContrac
     version = str(root.get("version", "")).strip()
     if not version:
         raise ValueError("Contract must define a non-empty 'version'.")
+
     description = str(root.get("description", "")).strip()
     metrics_raw = _expect_mapping(root.get("metrics"), context="metrics")
 
@@ -264,5 +309,5 @@ def load_sec_metric_contract(path: str | Path | None = None) -> SecMetricContrac
 def get_metric_mapping(
     path: str | Path | None = None,
 ) -> dict[str, MetricMapping]:
+    """Convenience wrapper returning only metric mapping dictionary."""
     return load_sec_metric_contract(path=path).metrics
-

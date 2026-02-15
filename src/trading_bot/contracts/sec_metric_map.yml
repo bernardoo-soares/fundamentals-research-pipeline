@@ -1,6 +1,15 @@
-version: "1.0.0"
+# SEC companyfacts -> canonical raw fundamentals mapping contract.
+#
+# How to read this file:
+# 1. Each top-level key under `metrics` is a canonical raw field.
+# 2. `tag_priority` is ordered best-to-fallback source tag preference.
+# 3. `transform_rule` describes downstream wide-table handling semantics.
+# 4. `quality_tier` marks confidence level of the selected signal.
+# 5. Helper fields at the bottom are fallback-only and not final screening metrics.
+version: "1.1.0"
 description: "SEC companyfacts to canonical fundamentals mapping contract"
 metrics:
+  # Income statement / duration fields that often need Q4 extraction downstream.
   saleq:
     fact_type: duration
     unit_priority: ["USD"]
@@ -35,6 +44,7 @@ metrics:
     form_priority: ["10-Q", "10-K"]
     tag_priority:
       - "us-gaap:InterestExpense"
+      - "us-gaap:InterestExpenseNet"
       - "us-gaap:InterestAndDebtExpense"
       - "us-gaap:InterestExpenseDebt"
       - "us-gaap:InterestExpenseBorrowings"
@@ -59,6 +69,7 @@ metrics:
       - "us-gaap:EarningsPerShareBasic"
     transform_rule: q4_extract
     quality_tier: primary
+  # Balance sheet / instant fields expected to map directly from point-in-time tags.
   actq:
     fact_type: instant
     unit_priority: ["USD"]
@@ -100,6 +111,7 @@ metrics:
       - "us-gaap:NoncurrentInvestments"
       - "us-gaap:LongTermInvestments"
       - "us-gaap:Investments"
+      - "us-gaap:AvailableForSaleSecuritiesNoncurrent"
     component_tags:
       - "us-gaap:AvailableForSaleSecuritiesDebtSecuritiesNoncurrent"
       - "us-gaap:HeldToMaturitySecuritiesNoncurrent"
@@ -184,6 +196,48 @@ metrics:
     helper_fallbacks: ["prstkcy", "cshopq"]
     transform_rule: direct_with_annual_fallback
     quality_tier: primary
+  capxq:
+    fact_type: duration
+    unit_priority: ["USD"]
+    form_priority: ["10-Q", "10-K"]
+    tag_priority:
+      - "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment"
+      - "us-gaap:CapitalExpendituresIncurredButNotYetPaid"
+      - "us-gaap:PaymentsToAcquireProductiveAssets"
+    transform_rule: q4_extract
+    quality_tier: primary
+  cheq:
+    fact_type: instant
+    unit_priority: ["USD"]
+    form_priority: ["10-Q", "10-K"]
+    tag_priority:
+      - "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+      - "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"
+      - "us-gaap:Cash"
+    transform_rule: direct
+    quality_tier: primary
+  dvpq:
+    fact_type: duration
+    unit_priority: ["USD"]
+    form_priority: ["10-Q", "10-K"]
+    tag_priority:
+      - "us-gaap:PaymentsOfDividends"
+      - "us-gaap:PaymentsOfDividendsCommonStock"
+      - "us-gaap:PaymentsOfOrdinaryDividends"
+    transform_rule: q4_extract
+    quality_tier: primary
+  cshfdq:
+    fact_type: duration
+    unit_priority: ["shares", "pure"]
+    form_priority: ["10-Q", "10-K"]
+    tag_priority:
+      - "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding"
+      - "us-gaap:WeightedAverageNumberOfSharesOutstandingDiluted"
+      - "us-gaap:WeightedAverageNumberOfShareOutstandingBasicAndDiluted"
+    helper_fallbacks: ["cshoq"]
+    transform_rule: direct
+    quality_tier: primary
+  # Helper fallback fields used by `helper_fallbacks` in primary mappings.
   oancfy:
     fact_type: duration
     unit_priority: ["USD"]
@@ -212,3 +266,13 @@ metrics:
       - "us-gaap:SharesRepurchased"
     transform_rule: direct
     quality_tier: proxy
+  cshoq:
+    fact_type: instant
+    unit_priority: ["shares", "pure"]
+    form_priority: ["10-Q", "10-K"]
+    tag_priority:
+      - "dei:EntityCommonStockSharesOutstanding"
+      - "us-gaap:CommonStockSharesOutstanding"
+      - "us-gaap:CommonStockOtherSharesOutstanding"
+    transform_rule: direct
+    quality_tier: fallback

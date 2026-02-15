@@ -1,94 +1,32 @@
-# Canonical Schema (Sprint 0 Contract)
+# Canonical SEC Contract and Long Output Schema
 
 ## Purpose
-Define the strict raw-field contract for SEC ingestion and normalization before any ratio computation.
+Define the current SEC contract that is enforced in code and the current output
+shape produced by `sec-normalize-long`.
 
-This schema is intentionally narrow:
-1. Fetch only approved raw fundamentals fields.
-2. Defer all derived metrics/ratios to later computation stages.
-3. Preserve audit columns for reproducibility.
+This stage is intentionally "raw and auditable":
+1. map SEC tags to canonical raw fields,
+2. keep source metadata for traceability,
+3. defer wide-table construction and ratio computation to later stages.
 
-## Grain
-One row per:
-1. `ticker`
-2. `fyearq`
-3. `fqtr`
+## 1) SEC Metric Mapping Contract
 
-## Required Key Columns
-1. `ticker` (`string`): symbol from `data/universe_current.csv`.
-2. `fyearq` (`int`): fiscal year.
-3. `fqtr` (`int` in `1..4`): fiscal quarter.
+Contract file:
+`src/trading_bot/contracts/sec_metric_map.yml`
 
-## Required Traceability Columns
-1. `cik` (`string`): SEC CIK, zero-padded to 10 digits.
-2. `period_end` (`date`): quarter/annual period end date from SEC fact.
-3. `filed_date` (`date`): SEC filing date for the selected fact.
-4. `form_type` (`string`): expected `10-Q` or `10-K`.
-5. `accn` (`string`): SEC accession number.
-6. `source_system` (`string`): for this stage use `sec-companyfacts`.
-7. `source_tag_map_version` (`string`): mapping contract version.
-8. `source_tag_<field>` (`string`): selected SEC tag per canonical raw field.
-9. `quality_tier_<field>` (`string`): `primary`, `fallback`, or `proxy`.
+Validator:
+`src/trading_bot/contracts/sec_metric_contract.py`
 
-## Fetch-Only Raw Fields
-These are the only canonical raw fundamentals fields fetched from SEC for this phase:
-1. `saleq` (`float`)
-2. `niq` (`float`)
-3. `oiadpq` (`float`)
-4. `xintq` (`float`)
-5. `txtq` (`float`)
-6. `epspxq` (`float`)
-7. `actq` (`float`)
-8. `lctq` (`float`)
-9. `ppentq` (`float`)
-10. `gdwlq` (`float`)
-11. `ivltq` (`float`)
-12. `atq` (`float`)
-13. `ceqq` (`float`)
-14. `dlcq` (`float`)
-15. `dlttq` (`float`)
-16. `req` (`float`)
-17. `tstkq` (`float`)
-18. `oancfq` (`float`)
-19. `prstkcq` (`float`)
+### 1.1 Required Canonical Fields
+The contract must define exactly these fields:
+1. Fetch-only raw fields:
+`saleq`, `niq`, `oiadpq`, `xintq`, `txtq`, `epspxq`, `actq`, `lctq`, `ppentq`,
+`gdwlq`, `ivltq`, `atq`, `ceqq`, `dlcq`, `dlttq`, `req`, `tstkq`, `oancfq`,
+`prstkcq`, `capxq`, `cheq`, `dvpq`, `cshfdq`.
+2. Helper fallback fields:
+`oancfy`, `prstkcy`, `cshopq`, `cshoq`.
 
-## Helper Fallback Fields
-Used only to improve fill rate of canonical raw fields:
-1. `oancfy` (`float`) for operating cash flow fallback logic.
-2. `prstkcy` (`float`) for annual repurchase fallback logic.
-3. `cshopq` (`float`) as share repurchase proxy.
-
-## Compute-Only Fields (Not Fetched)
-These must be derived later from canonical raw fields:
-1. `Operating_Margin`
-2. `Net_Profit_Margin`
-3. `Current_Ratio`
-4. `ROA`
-5. `ROE`
-6. `Debt_to_Equity`
-7. `Short_Term_Debt`
-8. `Healthy_Long_Term_Debt`
-9. `Treasury_Adjusted_Debt_to_Equity`
-10. `Book_Value`
-11. `Retained_Earnings_Growth`
-12. `Share_Repurchases`
-13. `Revenue_Growth`
-14. `EPS_Growth`
-15. `Return_on_Shareholder_Equity`
-16. `P/E_Ratio`
-17. `Market_Cap`
-18. `P/B_Ratio`
-19. `Dividend_Yield`
-20. `Earnings_Yield`
-
-## Mapping Contract File
-Contract source:
-`src/trading_bot/config/sec_metric_map.yml`
-
-Validator source:
-`src/trading_bot/config/sec_metric_contract.py`
-
-Each metric definition must include:
+### 1.2 Required Mapping Keys (per metric)
 1. `fact_type`
 2. `unit_priority`
 3. `form_priority`
@@ -100,8 +38,65 @@ Optional:
 1. `helper_fallbacks`
 2. `component_tags`
 
-## Constraints
-1. No extra canonical fields beyond fetch-only and helper fields in Sprint 0.
-2. No compute-only fields in mapping contract.
-3. Supported forms only: `10-Q`, `10-K`.
-4. Mapping contract changes must include schema test updates.
+### 1.3 Allowed Values
+1. `fact_type`: `duration` or `instant`
+2. `form_priority`: `10-Q`, `10-K`
+3. `transform_rule`:
+`direct`, `q4_extract`, `direct_with_annual_fallback`, `direct_or_sum_components`
+4. `quality_tier`: `primary`, `fallback`, `proxy`
+
+### 1.4 Contract Constraints
+1. Compute-only metrics are forbidden in the SEC mapping contract.
+2. `helper_fallbacks` can reference only helper fields.
+3. `direct_or_sum_components` requires non-empty `component_tags`.
+
+## 2) SEC Long Facts Output
+
+Produced by:
+`python -m trading_bot sec-normalize-long ...`
+
+Default output:
+`data/processed/sec_facts_long_2023_2025.csv`
+
+### 2.1 Time Window
+Rows are filtered to `start_year <= fyearq <= end_year` (defaults: 2023-2025).
+
+### 2.2 Row Grain and Dedupe
+Output is long-form (multiple rows per ticker-quarter, one per canonical field
+candidate). Deterministic dedupe keeps the latest fact by `filed_date` then
+`accn` for each key:
+1. `ticker`
+2. `canonical_field`
+3. `fyearq`
+4. `fqtr`
+5. `period_end`
+6. `form_type`
+7. `source_tag`
+8. `unit`
+
+### 2.3 Output Columns
+1. `ticker`
+2. `cik`
+3. `fyearq`
+4. `fqtr`
+5. `period_start`
+6. `period_end`
+7. `filed_date`
+8. `form_type`
+9. `accn`
+10. `frame`
+11. `canonical_field`
+12. `value`
+13. `unit`
+14. `source_tag`
+15. `quality_tier`
+16. `fact_type`
+17. `transform_rule`
+18. `is_component_tag`
+19. `source_system`
+20. `source_tag_map_version`
+
+### 2.4 Current Scope Note
+`sec-normalize-long` captures mapped SEC facts and mapping metadata. It does not
+yet execute wide-table transforms (for example Q4 extraction or component
+summing) inside this step.

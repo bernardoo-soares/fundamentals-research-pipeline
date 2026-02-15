@@ -25,11 +25,13 @@ dist/
 Thumbs.db
 
 # Data outputs
-data/raw/
-data/universe_current.csv
-data/processed/
-data/reports/
+data
+#data/universe_current.csv
+#data/processed/
+#data/reports/
 
 # Local agent/runtime metadata
-.agent/
 .agents/
+.agent/*
+!.agent/plans/
+!.agent/plans/**

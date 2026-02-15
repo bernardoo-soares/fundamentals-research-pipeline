@@ -1,3 +1,9 @@
+﻿"""Legacy fundamentals canonicalization step.
+
+This step filters local legacy per-ticker CSV files to the current universe and
+normalizes them into a canonical quarterly schema used by downstream workflows.
+"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -5,8 +11,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from trading_bot.config import get_settings
+from ..core.settings import get_settings
 
+# Canonical raw fields that must exist in the emitted legacy quarterly table.
 CANONICAL_RAW_FIELDS = [
     "saleq",
     "niq",
@@ -27,25 +34,15 @@ CANONICAL_RAW_FIELDS = [
     "tstkq",
     "oancfq",
     "prstkcq",
-]
-
-DERIVED_FIELDS = [
-    "operating_margin",
-    "net_profit_margin",
-    "current_ratio",
-    "debt_to_equity",
-    "short_term_debt",
-    "healthy_long_term_debt",
-    "book_value",
-    "treasury_adjusted_debt_to_equity",
-    "share_repurchases",
-    "retained_earnings_growth",
-    "roa",
-    "roe",
+    "capxq",
+    "cheq",
+    "dvpq",
+    "cshfdq",
 ]
 
 
 def _normalize_ticker(value: object) -> str | None:
+    """Normalize ticker values to uppercase or return `None` when empty."""
     if value is None:
         return None
     text = str(value).strip().upper()
@@ -55,6 +52,7 @@ def _normalize_ticker(value: object) -> str | None:
 
 
 def _coerce_date(value: date | str | None) -> date | None:
+    """Coerce optional date-like input into `date` objects."""
     if value is None:
         return None
     if isinstance(value, date):
@@ -62,12 +60,12 @@ def _coerce_date(value: date | str | None) -> date | None:
     return pd.to_datetime(value).date()
 
 
-def _safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
-    safe_denominator = denominator.where(denominator != 0)
-    return numerator / safe_denominator
-
-
 def _load_universe_tickers(universe_path: str | Path) -> set[str]:
+    """Load and normalize ticker set from the universe artifact.
+
+    Raises:
+        ValueError: If the universe file does not include `ticker` column.
+    """
     df = pd.read_csv(universe_path, dtype=str)
     if "ticker" not in df.columns:
         raise ValueError(f"Universe file '{universe_path}' is missing 'ticker' column.")
@@ -79,6 +77,7 @@ def _load_universe_tickers(universe_path: str | Path) -> set[str]:
 
 
 def _legacy_input_columns() -> set[str]:
+    """Return the subset of legacy columns required for canonicalization."""
     return {
         "tic",
         "datadate",
@@ -87,12 +86,14 @@ def _legacy_input_columns() -> set[str]:
         "tstkcq",
         "tstkq",
         "cshopq",
+        "cshoq",
         "prstkcy",
         *CANONICAL_RAW_FIELDS,
     }
 
 
 def _coerce_numeric_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Coerce selected DataFrame columns to numeric in-place."""
     for column in columns:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce")
@@ -100,15 +101,26 @@ def _coerce_numeric_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFram
 
 
 def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
+    """Load and normalize one legacy ticker CSV file.
+
+    Args:
+        path: Input legacy CSV path.
+        ticker_fallback: Ticker inferred from filename when source value is missing.
+
+    Returns:
+        Canonicalized per-file DataFrame keyed by `ticker,fyearq,fqtr`.
+    """
     df = pd.read_csv(path, usecols=lambda column: column in _legacy_input_columns())
     if df.empty:
         return pd.DataFrame()
 
+    # Prefer explicit `tic` values from source rows, fallback to filename ticker.
     if "tic" in df.columns:
         df["ticker"] = df["tic"].map(_normalize_ticker).fillna(ticker_fallback)
     else:
         df["ticker"] = ticker_fallback
 
+    # Backfill known legacy column name variants.
     if "tstkq" not in df.columns and "tstkcq" in df.columns:
         df["tstkq"] = df["tstkcq"]
 
@@ -116,9 +128,19 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
         if "cshopq" in df.columns:
             df["prstkcq"] = df["cshopq"]
         elif "prstkcy" in df.columns:
+            # Annual buybacks are approximated as quarterly average when needed.
             df["prstkcq"] = pd.to_numeric(df["prstkcy"], errors="coerce") / 4.0
         else:
             df["prstkcq"] = pd.NA
+
+    if "cshoq" in df.columns:
+        cshoq_numeric = pd.to_numeric(df["cshoq"], errors="coerce")
+        if "cshfdq" in df.columns:
+            df["cshfdq"] = pd.to_numeric(df["cshfdq"], errors="coerce").fillna(
+                cshoq_numeric
+            )
+        else:
+            df["cshfdq"] = cshoq_numeric
 
     if "datadate" in df.columns:
         df["period_end"] = pd.to_datetime(df["datadate"], errors="coerce")
@@ -132,6 +154,7 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
     if "fqtr" not in df.columns:
         df["fqtr"] = pd.NA
 
+    # Derive missing fiscal year/quarter from period end date when possible.
     has_period_end = df["period_end"].notna()
     df.loc[has_period_end & df["fyearq"].isna(), "fyearq"] = df.loc[
         has_period_end & df["fyearq"].isna(), "period_end"
@@ -168,6 +191,7 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
     ]
     df = df[keep_columns]
 
+    # Keep latest row per deterministic quarterly key within this file.
     df = df.sort_values(["period_end", "fyearq", "fqtr"])
     df = df.drop_duplicates(subset=["ticker", "fyearq", "fqtr"], keep="last")
     return df
@@ -178,6 +202,7 @@ def _apply_date_filter(
     start_date: date | None,
     end_date: date | None,
 ) -> pd.DataFrame:
+    """Filter rows by period bounds using period_end with fiscal fallback."""
     if start_date is None and end_date is None:
         return df
 
@@ -220,63 +245,12 @@ def _apply_date_filter(
     return filtered
 
 
-def _compute_derived_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    out = out.sort_values(["ticker", "fyearq", "fqtr"]).reset_index(drop=True)
-
-    total_debt = out[["dlcq", "dlttq"]].sum(axis=1, min_count=1)
-    out["operating_margin"] = _safe_divide(out["oiadpq"], out["saleq"])
-    out["net_profit_margin"] = _safe_divide(out["niq"], out["saleq"])
-    out["current_ratio"] = _safe_divide(out["actq"], out["lctq"])
-    out["debt_to_equity"] = _safe_divide(total_debt, out["ceqq"])
-    out["short_term_debt"] = _safe_divide(out["dlcq"], total_debt)
-    out["healthy_long_term_debt"] = _safe_divide(out["dlttq"], out["ceqq"])
-    out["book_value"] = out["ceqq"]
-
-    treasury_adjusted_equity = out["ceqq"] - out["tstkq"].abs()
-    out["treasury_adjusted_debt_to_equity"] = _safe_divide(
-        total_debt,
-        treasury_adjusted_equity,
-    )
-
-    out["share_repurchases"] = out["prstkcq"]
-
-    out["retained_earnings_growth"] = out.groupby("ticker", sort=False)["req"].transform(
-        lambda series: _safe_divide(series, series.shift(4)) - 1.0
-    )
-
-    ttm_niq = out.groupby("ticker", sort=False)["niq"].transform(
-        lambda series: series.rolling(4, min_periods=4).sum()
-    )
-    avg4q_assets = out.groupby("ticker", sort=False)["atq"].transform(
-        lambda series: series.rolling(4, min_periods=4).mean()
-    )
-    avg4q_equity = out.groupby("ticker", sort=False)["ceqq"].transform(
-        lambda series: series.rolling(4, min_periods=4).mean()
-    )
-    out["roa"] = _safe_divide(ttm_niq, avg4q_assets)
-    out["roe"] = _safe_divide(ttm_niq, avg4q_equity)
-    return out
-
-
 def _write_year_partitions(df: pd.DataFrame, output_dir: Path) -> None:
+    """Write year-partitioned fundamentals CSV artifacts."""
     for year, frame in df.groupby("fyearq"):
         year = int(year)
         fundamentals_path = output_dir / f"fundamentals_q_{year}.csv"
-        ratios_path = output_dir / f"ratios_q_{year}.csv"
-
         frame.to_csv(fundamentals_path, index=False)
-
-        ratio_frame = frame[
-            [
-                "ticker",
-                "fyearq",
-                "fqtr",
-                "period_end",
-                *DERIVED_FIELDS,
-            ]
-        ]
-        ratio_frame.to_csv(ratios_path, index=False)
 
 
 def build_legacy_fundamentals(
@@ -287,6 +261,23 @@ def build_legacy_fundamentals(
     start_date: date | str | None = None,
     end_date: date | str | None = None,
 ) -> pd.DataFrame:
+    """Build canonical quarterly legacy fundamentals for current universe.
+
+    Args:
+        universe_path: Universe CSV containing active tickers.
+        raw_dir: Directory with legacy ticker CSV files.
+        output_dir: Destination directory for canonical outputs.
+        canonical_filename: Name for combined canonical quarterly CSV.
+        start_date: Optional lower date filter.
+        end_date: Optional upper date filter.
+
+    Returns:
+        Canonical quarterly DataFrame for all matched universe tickers.
+
+    Raises:
+        FileNotFoundError: If legacy input directory does not exist.
+        RuntimeError: If no universe-matching rows are found.
+    """
     settings = get_settings()
     tickers = _load_universe_tickers(universe_path)
 
@@ -320,7 +311,6 @@ def build_legacy_fundamentals(
     canonical = canonical.sort_values(["ticker", "fyearq", "fqtr"]).reset_index(drop=True)
     canonical = canonical.drop_duplicates(subset=["ticker", "fyearq", "fqtr"], keep="last")
 
-    canonical = _compute_derived_metrics(canonical)
     canonical.to_csv(resolved_output_dir / canonical_filename, index=False)
     _write_year_partitions(canonical, resolved_output_dir)
     return canonical

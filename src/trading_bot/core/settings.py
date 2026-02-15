@@ -1,3 +1,9 @@
+﻿"""Centralized runtime settings sourced from environment variables.
+
+This module isolates all environment lookups so the rest of the codebase can
+operate on a typed `AppSettings` object with deterministic defaults.
+"""
+
 from __future__ import annotations
 
 import os
@@ -7,16 +13,51 @@ from pathlib import Path
 
 
 def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable with fallback to `default`.
+
+    Args:
+        name: Environment variable name.
+        default: Value returned when the variable is unset.
+
+    Returns:
+        Parsed integer value.
+    """
     value = os.getenv(name)
     if value is None:
         return default
     return int(value)
 
 
+def _env_float(name: str, default: float) -> float:
+    """Read a float environment variable with fallback to `default`.
+
+    Args:
+        name: Environment variable name.
+        default: Value returned when the variable is unset.
+
+    Returns:
+        Parsed float value.
+    """
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return float(value)
+
+
 @dataclass(frozen=True)
 class AppSettings:
+    """Typed container for all runtime configuration values.
+
+    Using a frozen dataclass prevents accidental in-process mutation of settings
+    after they are loaded.
+    """
+
     wiki_url: str
+    sec_reference_url: str
+    sec_data_url: str
     request_timeout_seconds: int
+    sec_rate_limit_per_second: float
+    sec_max_retries: int
     user_agent: str
     log_level: str
     data_root: Path
@@ -30,6 +71,12 @@ class AppSettings:
 
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
+    """Build and cache application settings from environment variables.
+
+    Returns:
+        A singleton `AppSettings` instance for the current process.
+    """
+    # Resolve root-relative paths first so downstream defaults stay consistent.
     data_root = Path(os.getenv("DATA_ROOT", "data"))
     raw_data_dir = Path(os.getenv("RAW_DATA_DIR", str(data_root / "raw")))
     processed_data_dir = Path(
@@ -44,12 +91,20 @@ def get_settings() -> AppSettings:
             str(data_root / "raw" / "Processed-Fundamentals"),
         )
     )
+
     return AppSettings(
         wiki_url=os.getenv(
             "WIKI_URL",
             "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
         ),
+        sec_reference_url=os.getenv(
+            "SEC_REFERENCE_URL",
+            "https://www.sec.gov/files/company_tickers.json",
+        ),
+        sec_data_url=os.getenv("SEC_DATA_URL", "https://data.sec.gov"),
         request_timeout_seconds=_env_int("REQUEST_TIMEOUT_SECONDS", 30),
+        sec_rate_limit_per_second=_env_float("SEC_RATE_LIMIT_PER_SECOND", 3.0),
+        sec_max_retries=_env_int("SEC_MAX_RETRIES", 4),
         user_agent=os.getenv(
             "USER_AGENT",
             "TradingBot/0.2 (research workflow; contact: local-user)",

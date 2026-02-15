@@ -22,6 +22,9 @@ Main commands:
 python -m trading_bot universe --as-of-date 2026-02-07
 python -m trading_bot legacy-fundamentals --start-date 2023-01-01 --end-date 2025-12-31
 python -m trading_bot full-run --as-of-date 2026-02-07 --start-date 2023-01-01 --end-date 2025-12-31
+python -m trading_bot sec-map-cik --universe-path data/universe_current.csv --output-path data/reports/sec_cik_mapping.csv
+python -m trading_bot sec-ingest-raw --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/companyfacts --log-path data/reports/sec_ingestion_log.csv
+python -m trading_bot sec-normalize-long --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_map.yml --output-path data/processed/sec_facts_long_2023_2025.csv --start-year 2023 --end-year 2025
 ```
 
 ## Pre-PR Quality Gate
@@ -47,7 +50,7 @@ Linting:
 
 ## Code Style Rules (Non-Obvious)
 1. Keep raw and derived layers separate:
-   - raw canonical fields in ingestion/normalization,
+   - raw canonical fields in steps/connectors,
    - ratios/features only in compute stage.
 2. Preserve auditability:
    - include source metadata (`filed_date`, `form_type`, source tag/version).
@@ -58,18 +61,19 @@ Linting:
 5. Prefer explicit exceptions over `SystemExit` in library code.
 
 ## Repo Map
-1. `src/trading_bot/config`: typed settings and mapping config.
-2. `src/trading_bot/services`: external source adapters.
-3. `src/trading_bot/pipelines`: orchestration and dataset builders.
-4. `src/trading_bot/io`: shared logging/exceptions utilities.
-5. `specs`: architecture and execution plans.
-6. `tests`: unit/integration tests.
-7. `data/raw`: source/landing files.
-8. `data/processed`: canonical and transformed tables.
-9. `data/reports`: coverage, QA, and screening outputs.
-10. `.agents/skills`: repo-scoped skills.
-11. `.agent/PLANS.md`: planning standard and ExecPlan format.
-12. `.agent/plans`: execution plan documents for substantial changes.
+1. `src/trading_bot/core`: shared settings/logging/exceptions utilities.
+2. `src/trading_bot/contracts`: typed SEC metric contract and mapping config.
+3. `src/trading_bot/connectors`: external source adapters.
+4. `src/trading_bot/steps`: source-facing and normalization pipeline steps.
+5. `src/trading_bot/workflows`: orchestration entrypoints that compose steps.
+6. `specs`: architecture and execution plans.
+7. `tests`: unit/integration tests.
+8. `data/raw`: source/landing files.
+9. `data/processed`: canonical and transformed tables.
+10. `data/reports`: coverage, QA, and screening outputs.
+11. `.agents/skills`: repo-scoped skills.
+12. `.agent/PLANS.md`: planning standard and ExecPlan format.
+13. `.agent/plans`: execution plan documents for substantial changes.
 
 ## Skills
 1. Repo-scoped skills live at `.agents/skills/**/SKILL.md`.

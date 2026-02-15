@@ -1,3 +1,5 @@
+﻿"""Pipeline step for generating the current S&P 500 universe artifact."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -5,10 +7,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from trading_bot.services import SP500Constituents
+from ..connectors.sp500 import SP500Constituents
 
 
 def _normalize_ticker(value: object) -> str | None:
+    """Normalize ticker strings to uppercase or return `None` when empty."""
     if value is None:
         return None
     text = str(value).strip().upper()
@@ -18,6 +21,11 @@ def _normalize_ticker(value: object) -> str | None:
 
 
 def _coerce_date(value: date | str | None) -> date:
+    """Coerce optional date input into a concrete `date` value.
+
+    If no date is supplied, today's local date is used for the universe
+    snapshot.
+    """
     if value is None:
         return date.today()
     if isinstance(value, date):
@@ -30,11 +38,22 @@ def build_sp500_current_universe(
     as_of_date: date | str | None = None,
     filename: str = "universe_current.csv",
 ) -> pd.DataFrame:
+    """Fetch and persist the current S&P 500 ticker universe.
+
+    Args:
+        output_dir: Directory where the universe CSV will be written.
+        as_of_date: Snapshot date annotation for auditability.
+        filename: Output CSV filename.
+
+    Returns:
+        DataFrame with columns `as_of_date`, `year`, and `ticker`.
+    """
     as_of_date = _coerce_date(as_of_date)
 
     scraper = SP500Constituents()
     members = scraper.get_sp500_current()
 
+    # Deduplicate and normalize symbols before writing output.
     normalized = sorted(
         {
             ticker
