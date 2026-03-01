@@ -27,7 +27,7 @@ Thumbs.db
 # Data outputs
 data
 #data/universe_current.csv
-#data/processed/
+!.data/processed/
 #data/reports/
 
 # Local agent/runtime metadata
@@ -35,3 +35,8 @@ data
 .agent/*
 !.agent/plans/
 !.agent/plans/**
+
+# resumes and plans folder
+resumes/
+plans/
+

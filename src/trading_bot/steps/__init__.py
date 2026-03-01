@@ -7,6 +7,7 @@ outputs in the raw/processed/report layers.
 from .legacy_fundamentals import build_legacy_fundamentals
 from .sec_fundamentals import (
     build_sec_cik_mapping,
+    build_sec_processed_fundamentals,
     normalize_sec_facts_long,
     run_sec_raw_ingestion,
 )
@@ -20,6 +21,7 @@ from .universe import build_sp500_current_universe
 __all__ = [
     "build_legacy_fundamentals",
     "build_sec_cik_mapping",
+    "build_sec_processed_fundamentals",
     "build_sec_fiscal_calendar",
     "build_sp500_current_universe",
     "normalize_sec_facts_long",

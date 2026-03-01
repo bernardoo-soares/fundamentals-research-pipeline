@@ -12,7 +12,8 @@ outputs, combining local legacy files and SEC companyfacts normalization.
 5) Ingest SEC submissions raw JSON payloads
 6) Build fiscal calendar reference table from submissions metadata
 7) Normalize SEC facts into contract-driven long canonical facts
-8) Ratio computation is deferred to a later stage
+8) Build fiscal-resolved SEC processed fundamentals (yearly wide outputs + QA artifacts)
+9) Ratio computation is deferred to a later stage
 
 ## Components
 
@@ -70,11 +71,23 @@ outputs, combining local legacy files and SEC companyfacts normalization.
 ### 7) Ratio Computation (Deferred)
 - Derived ratios are intentionally not produced in the current code path.
 
+### 8) SEC Processed Fundamentals (Wide + QA)
+- Sources:
+  - `data/raw/sec/companyfacts/*.json`
+  - `data/reports/sec_fiscal_calendar.csv`
+  - `data/reports/sec_cik_mapping.csv`
+- Outputs:
+  - `data/processed/processed_fundamentals_<year>.csv`
+  - `data/reports/sec_processed_coverage_2023_2025.csv`
+  - `data/reports/sec_fundamentals_conflicts_2023_2025.csv`
+  - `data/reports/sec_fiscal_resolution_unresolved_2023_2025.csv`
+- Scope note:
+  - Wide output currently applies deterministic candidate selection but does not yet execute transform semantics (`q4_extract`, annual fallbacks, component-sum logic) as finalized canonical transforms.
+
 ## Workflow Orchestration
-- `full-run` currently orchestrates only:
-  - universe build
-  - legacy fundamentals canonicalization
-- SEC mapping/ingestion/normalization run as separate CLI stages.
+- No multi-stage orchestration command is currently wired in the CLI.
+- Universe/legacy/SEC stages run as separate CLI commands.
+- `src/trading_bot/workflows/` remains the intended orchestration layer for future composite runs.
 
 ## Outputs
 Generated when each pipeline stage is executed:
@@ -83,7 +96,12 @@ Generated when each pipeline stage is executed:
 - `data/processed/fundamentals_q_<year>.csv`
 - `data/reports/sec_cik_mapping.csv`
 - `data/reports/sec_ingestion_log.csv`
+- `data/raw/sec/companyfacts/*.json`
 - `data/reports/sec_submissions_ingestion_log.csv`
 - `data/raw/sec/submissions/*.json`
 - `data/processed/sec_facts_long_2023_2025.csv`
 - `data/reports/sec_fiscal_calendar.csv`
+- `data/processed/processed_fundamentals_<year>.csv`
+- `data/reports/sec_processed_coverage_2023_2025.csv`
+- `data/reports/sec_fundamentals_conflicts_2023_2025.csv`
+- `data/reports/sec_fiscal_resolution_unresolved_2023_2025.csv`

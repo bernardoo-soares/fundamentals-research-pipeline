@@ -125,3 +125,47 @@ def test_cli_sec_build_fiscal_calendar_invokes_pipeline(monkeypatch, capsys) -> 
     assert captured["submissions_dir"] == "data/raw/sec/submissions"
     assert captured["mapping_path"] == "data/reports/sec_cik_mapping.csv"
     assert captured["output_path"] == "data/reports/sec_fiscal_calendar.csv"
+
+
+def test_cli_sec_build_processed_invokes_pipeline(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_processed(**kwargs):
+        captured.update(kwargs)
+        return {
+            "processed_2023": "data/processed/processed_fundamentals_2023.csv",
+            "coverage_output": "data/reports/sec_processed_coverage_2023_2025.csv",
+        }
+
+    monkeypatch.setattr(cli, "build_sec_processed_fundamentals", _fake_processed)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "trading-bot",
+            "sec-build-processed",
+            "--raw-dir",
+            "data/raw/sec/companyfacts",
+            "--mapping-path",
+            "src/trading_bot/contracts/sec_metric_map.yml",
+            "--fiscal-calendar-path",
+            "data/reports/sec_fiscal_calendar.csv",
+            "--sec-cik-mapping-path",
+            "data/reports/sec_cik_mapping.csv",
+            "--output-dir",
+            "data/processed",
+            "--reports-dir",
+            "data/reports",
+            "--start-year",
+            "2023",
+            "--end-year",
+            "2025",
+            "--max-day-delta",
+            "30",
+        ],
+    )
+
+    cli.main()
+    out = capsys.readouterr().out
+    assert "processed_2023=data/processed/processed_fundamentals_2023.csv" in out
+    assert captured["fiscal_calendar_path"] == "data/reports/sec_fiscal_calendar.csv"
+    assert captured["sec_cik_mapping_path"] == "data/reports/sec_cik_mapping.csv"

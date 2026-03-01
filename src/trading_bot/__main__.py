@@ -10,6 +10,7 @@ from .core.settings import get_settings
 from .steps.legacy_fundamentals import build_legacy_fundamentals
 from .steps.sec_fundamentals import (
     build_sec_cik_mapping,
+    build_sec_processed_fundamentals,
     normalize_sec_facts_long,
     run_sec_raw_ingestion,
 )
@@ -18,7 +19,6 @@ from .steps.sec_submissions import (
     run_sec_submissions_ingestion,
 )
 from .steps.universe import build_sp500_current_universe
-from .workflows.full_run import run_full_pipeline
 
 LOG = get_logger(__name__)
 
@@ -77,18 +77,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--canonical-filename",
         default=settings.canonical_legacy_filename,
     )
-
-    full_run_parser = subparsers.add_parser(
-        "full-run",
-        help="Run universe build and legacy fundamentals build end-to-end.",
-    )
-    full_run_parser.add_argument(
-        "--data-root",
-        default=str(settings.data_root),
-    )
-    full_run_parser.add_argument("--as-of-date", default=None)
-    full_run_parser.add_argument("--start-date", default=None)
-    full_run_parser.add_argument("--end-date", default=None)
 
     sec_map_parser = subparsers.add_parser(
         "sec-map-cik",
@@ -174,6 +162,41 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sec_norm_parser.add_argument("--start-year", type=int, default=2023)
     sec_norm_parser.add_argument("--end-year", type=int, default=2025)
+    sec_norm_parser.add_argument("--fiscal-calendar-path", default=None)
+    sec_norm_parser.add_argument("--max-day-delta", type=int, default=30)
+    sec_norm_parser.add_argument("--unresolved-path", default=None)
+
+    sec_processed_parser = subparsers.add_parser(
+        "sec-build-processed",
+        help="Build fiscal-resolved processed SEC fundamentals (yearly wide CSVs).",
+    )
+    sec_processed_parser.add_argument(
+        "--raw-dir",
+        default=str(Path(settings.raw_data_dir) / "sec" / "companyfacts"),
+    )
+    sec_processed_parser.add_argument(
+        "--mapping-path",
+        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_map.yml"),
+    )
+    sec_processed_parser.add_argument(
+        "--fiscal-calendar-path",
+        default=str(Path(settings.reports_data_dir) / "sec_fiscal_calendar.csv"),
+    )
+    sec_processed_parser.add_argument(
+        "--sec-cik-mapping-path",
+        default=str(Path(settings.reports_data_dir) / "sec_cik_mapping.csv"),
+    )
+    sec_processed_parser.add_argument(
+        "--output-dir",
+        default=str(settings.processed_data_dir),
+    )
+    sec_processed_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    sec_processed_parser.add_argument("--start-year", type=int, default=2023)
+    sec_processed_parser.add_argument("--end-year", type=int, default=2025)
+    sec_processed_parser.add_argument("--max-day-delta", type=int, default=30)
 
     return parser
 
@@ -225,25 +248,6 @@ def main() -> None:
         print(f"canonical_rows={len(df)}")
         return
 
-    if args.command == "full-run":
-        LOG.info(
-            "Running full pipeline: data_root=%s as_of_date=%s start_date=%s end_date=%s",
-            args.data_root,
-            args.as_of_date,
-            args.start_date,
-            args.end_date,
-        )
-        summary = run_full_pipeline(
-            data_root=args.data_root,
-            as_of_date=args.as_of_date,
-            start_date=args.start_date,
-            end_date=args.end_date,
-        )
-        LOG.info("Full pipeline completed: %s", summary)
-        for key, value in summary.items():
-            print(f"{key}={value}")
-        return
-
     if args.command == "sec-map-cik":
         LOG.info(
             "Running SEC CIK mapping: universe_path=%s output_path=%s",
@@ -279,22 +283,58 @@ def main() -> None:
     if args.command == "sec-normalize-long":
         LOG.info(
             "Running SEC long normalization: raw_dir=%s mapping_path=%s output_path=%s "
-            "start_year=%d end_year=%d",
+            "fiscal_calendar_path=%s start_year=%d end_year=%d max_day_delta=%d unresolved_path=%s",
             args.raw_dir,
             args.mapping_path,
             args.output_path,
+            args.fiscal_calendar_path,
             args.start_year,
             args.end_year,
+            args.max_day_delta,
+            args.unresolved_path,
         )
         df = normalize_sec_facts_long(
             raw_dir=args.raw_dir,
             mapping_path=args.mapping_path,
             output_path=args.output_path,
+            fiscal_calendar_path=args.fiscal_calendar_path,
             start_year=args.start_year,
             end_year=args.end_year,
+            max_day_delta=args.max_day_delta,
+            unresolved_path=args.unresolved_path,
         )
         LOG.info("SEC long normalization completed with %d rows.", len(df))
         print(f"normalized_rows={len(df)}")
+        return
+
+    if args.command == "sec-build-processed":
+        LOG.info(
+            "Running SEC processed build: raw_dir=%s mapping_path=%s fiscal_calendar_path=%s "
+            "sec_cik_mapping_path=%s output_dir=%s reports_dir=%s start_year=%d end_year=%d max_day_delta=%d",
+            args.raw_dir,
+            args.mapping_path,
+            args.fiscal_calendar_path,
+            args.sec_cik_mapping_path,
+            args.output_dir,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+            args.max_day_delta,
+        )
+        artifacts = build_sec_processed_fundamentals(
+            raw_dir=args.raw_dir,
+            mapping_path=args.mapping_path,
+            fiscal_calendar_path=args.fiscal_calendar_path,
+            sec_cik_mapping_path=args.sec_cik_mapping_path,
+            output_dir=args.output_dir,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+            max_day_delta=args.max_day_delta,
+        )
+        LOG.info("SEC processed build completed: %s", artifacts)
+        for key, value in artifacts.items():
+            print(f"{key}={value}")
         return
 
     if args.command == "sec-ingest-submissions":

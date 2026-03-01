@@ -29,6 +29,7 @@ from ..connectors.sec import (
 from ..core.exceptions import SecRequestError
 from ..core.logging import get_logger, utc_now_iso
 from ..core.settings import get_settings
+from .fiscal_resolution import normalize_fiscal_year_end_mmdd, resolve_fiscal_quarter
 
 
 LOG = get_logger(__name__)
@@ -340,6 +341,11 @@ LONG_FACT_COLUMNS = [
     "is_component_tag",
     "source_system",
     "source_tag_map_version",
+    "fiscal_year_end_mmdd",
+    "fiscal_anchor_end",
+    "fiscal_day_delta",
+    "source_fy",
+    "source_fp",
 ]
 
 # Deterministic key for duplicate fact candidate resolution.
@@ -352,6 +358,24 @@ DEDUPE_KEY = [
     "form_type",
     "source_tag",
     "unit",
+]
+
+UNRESOLVED_FACT_COLUMNS = [
+    "ticker",
+    "cik",
+    "canonical_field",
+    "source_tag",
+    "period_start",
+    "period_end",
+    "filed_date",
+    "form_type",
+    "accn",
+    "unit",
+    "value",
+    "fiscal_year_end_mmdd",
+    "source_fy",
+    "source_fp",
+    "reason",
 ]
 
 
@@ -399,6 +423,34 @@ def _coerce_timestamp(value: Any) -> pd.Timestamp | pd.NaT:
     return pd.to_datetime(value, errors="coerce")
 
 
+def _load_fiscal_calendar_lookup(
+    fiscal_calendar_path: str | Path,
+) -> dict[tuple[str, str], str]:
+    """Load fiscal-year-end mapping keyed by `(ticker, cik)`."""
+    table = pd.read_csv(fiscal_calendar_path, dtype=str).fillna("")
+    required = {"ticker", "cik", "fiscal_year_end_mmdd"}
+    if not required.issubset(table.columns):
+        missing = sorted(required.difference(table.columns))
+        raise ValueError(
+            f"Fiscal calendar file missing required columns: {missing}"
+        )
+
+    table["ticker"] = table["ticker"].astype(str).str.strip().str.upper()
+    table["cik"] = table["cik"].astype(str).str.strip().str.zfill(10)
+    table["fiscal_year_end_mmdd"] = (
+        table["fiscal_year_end_mmdd"]
+        .astype(str)
+        .str.strip()
+        .map(normalize_fiscal_year_end_mmdd)
+        .fillna("")
+    )
+    table = table.drop_duplicates(subset=["ticker", "cik"], keep="last")
+    return {
+        (str(row["ticker"]), str(row["cik"])): str(row["fiscal_year_end_mmdd"])
+        for _, row in table.iterrows()
+    }
+
+
 def _resolve_canonical_field(
     tag_full: str,
     mapping: dict[str, MetricMapping],
@@ -426,41 +478,66 @@ def _build_row(
     source_tag_map_version: str,
     start_year: int,
     end_year: int,
-) -> dict[str, Any] | None:
+    fiscal_year_end_mmdd: str,
+    max_day_delta: int,
+    strict_fiscal_resolution: bool,
+) -> tuple[dict[str, Any] | None, str | None]:
     """Validate and transform one flattened SEC observation into output row.
 
-    Rows are rejected when form/unit/year/quarter/value constraints do not match
-    the metric contract.
+    Rows are rejected when form/unit/value/period constraints do not match the
+    metric contract or fiscal quarter resolution policy.
     """
     form_type = str(source.get("form", "")).strip()
     if form_type not in cfg.form_priority:
-        return None
+        return None, "unsupported_form"
 
     unit = str(source.get("unit", "")).strip()
     if unit not in cfg.unit_priority:
-        return None
+        return None, "unsupported_unit"
 
     period_start = _coerce_timestamp(source.get("start"))
     period_end = _coerce_timestamp(source.get("end"))
     filed_date = _coerce_timestamp(source.get("filed"))
 
-    # Prefer explicit fiscal year from SEC payload, fallback to period end year.
-    fyearq = _coerce_year(source.get("fy"))
-    if fyearq is None and pd.notna(period_end):
-        fyearq = int(period_end.year)
-    if fyearq is None or fyearq < start_year or fyearq > end_year:
-        return None
-
-    # Prefer SEC fp quarter label, fallback to period_end quarter.
-    fqtr = _coerce_quarter_from_fp(source.get("fp"))
-    if fqtr is None and pd.notna(period_end):
-        fqtr = int(period_end.quarter)
-    if fqtr is None:
-        return None
-
     value = pd.to_numeric(pd.Series([source.get("value")]), errors="coerce").iloc[0]
     if pd.isna(value):
-        return None
+        return None, "non_numeric_value"
+
+    fyearq: int | None = None
+    fqtr: int | None = None
+    fiscal_anchor_end: pd.Timestamp | pd.NaT = pd.NaT
+    fiscal_day_delta: int | None = None
+
+    normalized_mmdd = normalize_fiscal_year_end_mmdd(fiscal_year_end_mmdd)
+    if normalized_mmdd:
+        resolved = resolve_fiscal_quarter(
+            period_end=period_end,
+            fiscal_year_end_mmdd=normalized_mmdd,
+            start_year=start_year,
+            end_year=end_year,
+            max_day_delta=max_day_delta,
+        )
+        if resolved is None:
+            return None, "unresolved_fiscal_period"
+        fyearq = resolved.fyearq
+        fqtr = resolved.fqtr
+        fiscal_anchor_end = resolved.fiscal_anchor_end
+        fiscal_day_delta = resolved.day_delta
+    elif strict_fiscal_resolution:
+        return None, "missing_fiscal_year_end"
+    else:
+        # Backward-compatible fallback path when fiscal calendar is not supplied.
+        fyearq = _coerce_year(source.get("fy"))
+        if fyearq is None and pd.notna(period_end):
+            fyearq = int(period_end.year)
+        if fyearq is None or fyearq < start_year or fyearq > end_year:
+            return None, "out_of_year_range"
+
+        fqtr = _coerce_quarter_from_fp(source.get("fp"))
+        if fqtr is None and pd.notna(period_end):
+            fqtr = int(period_end.quarter)
+        if fqtr is None:
+            return None, "missing_quarter"
 
     return {
         "ticker": str(source.get("ticker", "")).strip().upper(),
@@ -483,7 +560,12 @@ def _build_row(
         "is_component_tag": is_component_tag,
         "source_system": "sec-companyfacts",
         "source_tag_map_version": source_tag_map_version,
-    }
+        "fiscal_year_end_mmdd": normalized_mmdd or "",
+        "fiscal_anchor_end": fiscal_anchor_end,
+        "fiscal_day_delta": fiscal_day_delta,
+        "source_fy": _coerce_year(source.get("fy")),
+        "source_fp": str(source.get("fp", "")).strip(),
+    }, None
 
 
 def normalize_sec_facts_long(
@@ -491,8 +573,11 @@ def normalize_sec_facts_long(
     mapping_path: str | Path | None = None,
     output_path: str | Path = "data/processed/sec_facts_long_2023_2025.csv",
     *,
+    fiscal_calendar_path: str | Path | None = None,
     start_year: int = 2023,
     end_year: int = 2025,
+    max_day_delta: int = 30,
+    unresolved_path: str | Path | None = None,
 ) -> pd.DataFrame:
     """Normalize raw SEC companyfacts JSON into canonical long-form facts.
 
@@ -500,20 +585,25 @@ def normalize_sec_facts_long(
         raw_dir: Directory containing `<ticker>_<cik>.json` raw payloads.
         mapping_path: Optional contract YAML path override.
         output_path: CSV path or directory for normalized output.
+        fiscal_calendar_path: Optional fiscal calendar CSV path.
         start_year: Inclusive fiscal year lower bound.
         end_year: Inclusive fiscal year upper bound.
+        max_day_delta: Maximum distance in days for fiscal quarter anchor matching.
+        unresolved_path: Optional unresolved-row CSV output path.
 
     Returns:
         Long-form canonical SEC facts DataFrame.
     """
     LOG.info(
         "Starting SEC long normalization: raw_dir=%s mapping_path=%s output_path=%s "
-        "start_year=%d end_year=%d",
+        "fiscal_calendar_path=%s start_year=%d end_year=%d max_day_delta=%d",
         raw_dir,
         mapping_path,
         output_path,
+        fiscal_calendar_path,
         start_year,
         end_year,
+        max_day_delta,
     )
     contract = load_sec_metric_contract(path=mapping_path)
     mapping = contract.metrics
@@ -525,6 +615,19 @@ def normalize_sec_facts_long(
 
     raw_dir = Path(raw_dir)
     output_path = Path(output_path)
+    strict_fiscal_resolution = fiscal_calendar_path is not None
+    fiscal_lookup: dict[tuple[str, str], str] = {}
+
+    if strict_fiscal_resolution:
+        fiscal_calendar_path = Path(fiscal_calendar_path)
+        if not fiscal_calendar_path.exists():
+            raise ValueError(f"Fiscal calendar file not found: {fiscal_calendar_path}")
+        fiscal_lookup = _load_fiscal_calendar_lookup(fiscal_calendar_path)
+        LOG.info(
+            "Loaded fiscal calendar rows: %d from %s",
+            len(fiscal_lookup),
+            fiscal_calendar_path,
+        )
 
     # Allow caller to pass either a specific CSV file or a destination directory.
     if output_path.exists() and output_path.is_dir():
@@ -538,6 +641,7 @@ def normalize_sec_facts_long(
     LOG.info("SEC raw files discovered for normalization: %d", len(json_files))
 
     rows: list[dict[str, Any]] = []
+    unresolved_rows: list[dict[str, Any]] = []
     total_facts_seen = 0
     unmapped_tag_facts = 0
     matched_tag_facts = 0
@@ -561,8 +665,9 @@ def normalize_sec_facts_long(
             file_matched += 1
             canonical, is_component_tag = resolved
             cfg = mapping[canonical]
+            fiscal_year_end_mmdd = fiscal_lookup.get((ticker, cik), "")
 
-            candidate = _build_row(
+            candidate, reason = _build_row(
                 source=fact,
                 canonical=canonical,
                 cfg=cfg,
@@ -571,11 +676,37 @@ def normalize_sec_facts_long(
                 source_tag_map_version=contract.version,
                 start_year=start_year,
                 end_year=end_year,
+                fiscal_year_end_mmdd=fiscal_year_end_mmdd,
+                max_day_delta=max_day_delta,
+                strict_fiscal_resolution=strict_fiscal_resolution,
             )
             if candidate is not None:
                 rows.append(candidate)
                 accepted_rows += 1
                 file_accepted += 1
+            elif strict_fiscal_resolution and reason in {
+                "missing_fiscal_year_end",
+                "unresolved_fiscal_period",
+            }:
+                unresolved_rows.append(
+                    {
+                        "ticker": str(fact.get("ticker", "")).strip().upper(),
+                        "cik": str(fact.get("cik", "")).strip().zfill(10),
+                        "canonical_field": canonical,
+                        "source_tag": tag_full,
+                        "period_start": _coerce_timestamp(fact.get("start")),
+                        "period_end": _coerce_timestamp(fact.get("end")),
+                        "filed_date": _coerce_timestamp(fact.get("filed")),
+                        "form_type": str(fact.get("form", "")).strip(),
+                        "accn": str(fact.get("accn", "")).strip(),
+                        "unit": str(fact.get("unit", "")).strip(),
+                        "value": fact.get("value"),
+                        "fiscal_year_end_mmdd": fiscal_year_end_mmdd,
+                        "source_fy": _coerce_year(fact.get("fy")),
+                        "source_fp": str(fact.get("fp", "")).strip(),
+                        "reason": reason,
+                    }
+                )
 
         LOG.info(
             "Normalization file %d/%d processed: ticker=%s cik=%s facts_seen=%d "
@@ -590,6 +721,21 @@ def normalize_sec_facts_long(
         )
 
     out = pd.DataFrame(rows, columns=LONG_FACT_COLUMNS)
+    if strict_fiscal_resolution:
+        unresolved = pd.DataFrame(unresolved_rows, columns=UNRESOLVED_FACT_COLUMNS)
+        if unresolved_path is None:
+            unresolved_path = (
+                output_path.parent
+                / f"sec_facts_long_unresolved_{start_year}_{end_year}.csv"
+            )
+        unresolved_path = Path(unresolved_path)
+        unresolved_path.parent.mkdir(parents=True, exist_ok=True)
+        unresolved.to_csv(unresolved_path, index=False)
+        LOG.info(
+            "Fiscal resolution unresolved rows written: rows=%d output=%s",
+            len(unresolved),
+            unresolved_path,
+        )
     LOG.info(
         "Normalization pre-dedupe stats: files=%d total_facts=%d mapped_tag_facts=%d "
         "unmapped_tag_facts=%d accepted_rows=%d",
@@ -631,3 +777,238 @@ def normalize_sec_facts_long(
     out.to_csv(output_path, index=False)
     LOG.info("Normalization completed: final_rows=%d output=%s", len(out), output_path)
     return out
+
+
+def _load_mapped_companies(
+    sec_cik_mapping_path: str | Path,
+) -> pd.DataFrame:
+    """Load mapped ticker/CIK pairs from SEC mapping report."""
+    mapping = pd.read_csv(sec_cik_mapping_path, dtype=str).fillna("")
+    required = {"ticker", "cik", "mapping_status"}
+    if not required.issubset(mapping.columns):
+        missing = sorted(required.difference(mapping.columns))
+        raise ValueError(f"SEC CIK mapping file missing required columns: {missing}")
+
+    mapped = mapping[mapping["mapping_status"] == "mapped"].copy()
+    mapped["ticker"] = mapped["ticker"].astype(str).str.strip().str.upper()
+    mapped["cik"] = mapped["cik"].astype(str).str.strip().str.zfill(10)
+    mapped = mapped[(mapped["ticker"] != "") & (mapped["cik"] != "")]
+    mapped = mapped.drop_duplicates(subset=["ticker", "cik"], keep="last")
+    return mapped[["ticker", "cik"]].sort_values(["ticker", "cik"], kind="mergesort")
+
+
+def _compute_tag_rank(
+    *,
+    source_tag: str,
+    cfg: MetricMapping,
+) -> int:
+    """Compute deterministic source-tag priority rank for one metric mapping."""
+    try:
+        return cfg.tag_priority.index(source_tag)
+    except ValueError:
+        pass
+
+    try:
+        return len(cfg.tag_priority) + cfg.component_tags.index(source_tag)
+    except ValueError:
+        return len(cfg.tag_priority) + len(cfg.component_tags) + 1_000
+
+
+def _build_selected_quarterly_facts(
+    *,
+    long_df: pd.DataFrame,
+    mapping: dict[str, MetricMapping],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Select one best fact per ticker/fiscal-quarter/canonical-field."""
+    if long_df.empty:
+        return long_df.copy(), pd.DataFrame()
+
+    ranked = long_df.copy()
+    ranked["tag_rank"] = ranked.apply(
+        lambda row: _compute_tag_rank(
+            source_tag=str(row["source_tag"]),
+            cfg=mapping[str(row["canonical_field"])],
+        ),
+        axis=1,
+    )
+    ranked["form_rank"] = ranked.apply(
+        lambda row: (
+            mapping[str(row["canonical_field"])].form_priority.index(str(row["form_type"]))
+            if str(row["form_type"]) in mapping[str(row["canonical_field"])].form_priority
+            else 1_000
+        ),
+        axis=1,
+    )
+    ranked["is_component_rank"] = ranked["is_component_tag"].fillna(False).astype(bool).astype(int)
+    ranked["filed_date"] = pd.to_datetime(ranked["filed_date"], errors="coerce")
+    ranked["accn"] = ranked["accn"].fillna("").astype(str)
+
+    key = ["ticker", "cik", "fyearq", "fqtr", "canonical_field"]
+    conflict_counts = (
+        ranked.groupby(key, dropna=False)
+        .size()
+        .reset_index(name="candidate_count")
+    )
+    conflicts = conflict_counts[conflict_counts["candidate_count"] > 1].copy()
+    if not conflicts.empty:
+        detail = (
+            ranked[key + ["source_tag", "form_type", "filed_date", "accn", "value"]]
+            .sort_values(
+                key + ["filed_date", "accn"],
+                ascending=[True, True, True, True, True, False, False],
+                kind="mergesort",
+            )
+            .groupby(key, dropna=False)
+            .head(5)
+        )
+        conflicts = conflicts.merge(detail, on=key, how="left")
+
+    ranked = ranked.sort_values(
+        key + ["is_component_rank", "tag_rank", "form_rank", "filed_date", "accn"],
+        ascending=[True, True, True, True, True, True, True, True, False, False],
+        kind="mergesort",
+    )
+    selected = ranked.drop_duplicates(subset=key, keep="first").reset_index(drop=True)
+    return selected, conflicts
+
+
+def build_sec_processed_fundamentals(
+    *,
+    raw_dir: str | Path = "data/raw/sec/companyfacts",
+    mapping_path: str | Path | None = None,
+    fiscal_calendar_path: str | Path = "data/reports/sec_fiscal_calendar.csv",
+    sec_cik_mapping_path: str | Path = "data/reports/sec_cik_mapping.csv",
+    output_dir: str | Path = "data/processed",
+    reports_dir: str | Path = "data/reports",
+    start_year: int = 2023,
+    end_year: int = 2025,
+    max_day_delta: int = 30,
+) -> dict[str, str]:
+    """Build wide processed SEC fundamentals with fiscal-resolved quarters.
+
+    Returns:
+        Dictionary containing output artifact paths.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir = Path(reports_dir)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    long_output = output_dir / f"sec_facts_long_{start_year}_{end_year}.csv"
+    unresolved_output = (
+        reports_dir / f"sec_fiscal_resolution_unresolved_{start_year}_{end_year}.csv"
+    )
+    conflicts_output = reports_dir / f"sec_fundamentals_conflicts_{start_year}_{end_year}.csv"
+    coverage_output = reports_dir / f"sec_processed_coverage_{start_year}_{end_year}.csv"
+
+    long_df = normalize_sec_facts_long(
+        raw_dir=raw_dir,
+        mapping_path=mapping_path,
+        output_path=long_output,
+        fiscal_calendar_path=fiscal_calendar_path,
+        start_year=start_year,
+        end_year=end_year,
+        max_day_delta=max_day_delta,
+        unresolved_path=unresolved_output,
+    )
+    contract = load_sec_metric_contract(path=mapping_path)
+    mapping = contract.metrics
+    canonical_fields = list(mapping.keys())
+
+    selected, conflicts = _build_selected_quarterly_facts(
+        long_df=long_df,
+        mapping=mapping,
+    )
+    conflicts.to_csv(conflicts_output, index=False)
+
+    quarter_key = ["ticker", "cik", "fyearq", "fqtr"]
+    if selected.empty:
+        quarter_meta = pd.DataFrame(columns=quarter_key)
+        value_wide = pd.DataFrame(columns=quarter_key + canonical_fields)
+    else:
+        quarter_meta = (
+            selected.sort_values(
+                quarter_key + ["filed_date", "accn"],
+                ascending=[True, True, True, True, False, False],
+                kind="mergesort",
+            )
+            .drop_duplicates(subset=quarter_key, keep="first")
+            [
+                quarter_key
+                + [
+                    "period_start",
+                    "period_end",
+                    "filed_date",
+                    "form_type",
+                    "accn",
+                    "fiscal_year_end_mmdd",
+                    "fiscal_day_delta",
+                ]
+            ]
+        )
+        value_wide = (
+            selected.pivot_table(
+                index=quarter_key,
+                columns="canonical_field",
+                values="value",
+                aggfunc="first",
+            )
+            .reset_index()
+        )
+        value_wide.columns.name = None
+
+    mapped_companies = _load_mapped_companies(sec_cik_mapping_path)
+    years = pd.DataFrame(
+        [{"fyearq": year, "fqtr": fqtr} for year in range(start_year, end_year + 1) for fqtr in range(1, 5)]
+    )
+    mapped_companies["_join"] = 1
+    years["_join"] = 1
+    grid = mapped_companies.merge(years, on="_join", how="inner").drop(columns="_join")
+
+    final = grid.merge(quarter_meta, on=quarter_key, how="left")
+    final = final.merge(value_wide, on=quarter_key, how="left")
+    for field in canonical_fields:
+        if field not in final.columns:
+            final[field] = pd.NA
+
+    ordered_columns = (
+        ["fyearq", "fqtr", "ticker", "cik", "period_start", "period_end", "filed_date", "form_type", "accn"]
+        + canonical_fields
+        + ["fiscal_year_end_mmdd", "fiscal_day_delta"]
+    )
+    final = final[ordered_columns].sort_values(
+        ["ticker", "fyearq", "fqtr"],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+    year_outputs: dict[str, str] = {}
+    coverage_rows: list[dict[str, Any]] = []
+    for year in range(start_year, end_year + 1):
+        year_df = final[final["fyearq"] == year].copy()
+        year_output = output_dir / f"processed_fundamentals_{year}.csv"
+        year_df.to_csv(year_output, index=False)
+        year_outputs[str(year)] = str(year_output)
+
+        metric_non_null = year_df[canonical_fields].notna().sum()
+        coverage_row: dict[str, Any] = {
+            "year": year,
+            "expected_rows": int(len(mapped_companies) * 4),
+            "rows_emitted": int(len(year_df)),
+            "rows_with_any_metric": int(year_df[canonical_fields].notna().any(axis=1).sum()),
+        }
+        for field in canonical_fields:
+            coverage_row[f"non_null_{field}"] = int(metric_non_null.get(field, 0))
+        coverage_rows.append(coverage_row)
+
+    coverage = pd.DataFrame(coverage_rows)
+    coverage.to_csv(coverage_output, index=False)
+
+    artifacts = {
+        "long_output": str(long_output),
+        "unresolved_output": str(unresolved_output),
+        "conflicts_output": str(conflicts_output),
+        "coverage_output": str(coverage_output),
+    }
+    artifacts.update({f"processed_{year}": path for year, path in year_outputs.items()})
+    LOG.info("SEC processed fundamentals build completed: %s", artifacts)
+    return artifacts

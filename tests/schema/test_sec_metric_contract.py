@@ -70,6 +70,20 @@ def test_helper_fallbacks_reference_existing_helper_fields() -> None:
             )
 
 
+def test_extended_fallback_tags_present() -> None:
+    contract = load_sec_metric_contract()
+    assert (
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"
+        in contract.metrics["oiadpq"].tag_priority
+    )
+    assert "us-gaap:InterestExpenseNonoperating" in contract.metrics["xintq"].tag_priority
+    assert "us-gaap:CommercialPaper" in contract.metrics["dlcq"].tag_priority
+    assert "us-gaap:SeniorNotes" in contract.metrics["dlttq"].tag_priority
+    assert "us-gaap:TreasuryStockCommonValue" in contract.metrics["tstkq"].tag_priority
+    assert "us-gaap:StockRepurchasedDuringPeriodValue" in contract.metrics["prstkcq"].tag_priority
+    assert "us-gaap:DividendsCommonStockCash" in contract.metrics["dvpq"].tag_priority
+
+
 def test_failing_when_required_field_missing(tmp_path: Path) -> None:
     bad_contract = tmp_path / "sec_metric_map.yml"
     bad_contract.write_text(

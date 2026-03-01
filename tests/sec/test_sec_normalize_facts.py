@@ -120,3 +120,58 @@ def test_normalize_sec_facts_long_accepts_directory_output_path(tmp_path) -> Non
 
     assert expected_file.exists()
     assert len(df) == 1
+
+
+def test_normalize_sec_facts_long_uses_fiscal_calendar_resolution(tmp_path) -> None:
+    raw_dir = tmp_path / "raw" / "sec" / "companyfacts"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    output_path = tmp_path / "processed" / "sec_facts_long_2023_2025.csv"
+    unresolved_path = tmp_path / "reports" / "sec_facts_long_unresolved_2023_2025.csv"
+    fiscal_calendar_path = tmp_path / "reports" / "sec_fiscal_calendar.csv"
+    fiscal_calendar_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            {
+                                "val": 580_882_000.0,
+                                "start": "2022-08-01",
+                                "end": "2022-10-31",
+                                "fy": 2024,
+                                "fp": "Q3",
+                                "form": "10-Q",
+                                "filed": "2023-11-29",
+                                "accn": "0001",
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    (raw_dir / "CRWD_0001535527.json").write_text(json.dumps(payload), encoding="utf-8")
+    fiscal_calendar_path.write_text(
+        "ticker,cik,fiscal_year_end_mmdd,company_name,exchange\n"
+        "CRWD,0001535527,0131,CrowdStrike,NASDAQ\n",
+        encoding="utf-8",
+    )
+
+    df = normalize_sec_facts_long(
+        raw_dir=raw_dir,
+        output_path=output_path,
+        fiscal_calendar_path=fiscal_calendar_path,
+        unresolved_path=unresolved_path,
+        start_year=2023,
+        end_year=2025,
+        max_day_delta=30,
+    )
+
+    assert len(df) == 1
+    assert int(df.loc[0, "fyearq"]) == 2023
+    assert int(df.loc[0, "fqtr"]) == 3
+    assert int(df.loc[0, "source_fy"]) == 2024
+    assert str(df.loc[0, "source_fp"]) == "Q3"
+    assert unresolved_path.exists()

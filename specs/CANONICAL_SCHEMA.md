@@ -17,6 +17,9 @@ Contract file:
 Validator:
 `src/trading_bot/contracts/sec_metric_contract.py`
 
+Contract version in repo: `1.1.1` (append-only fallback tag expansion for sparse
+issuers; existing tag order remains unchanged and higher-priority tags still win).
+
 ### 1.1 Required Canonical Fields
 The contract must define exactly these fields:
 1. Fetch-only raw fields:
@@ -61,6 +64,11 @@ Default output:
 ### 2.1 Time Window
 Rows are filtered to `start_year <= fyearq <= end_year` (defaults: 2023-2025).
 
+When `fiscal_calendar_path` is supplied, `fyearq/fqtr` are resolved from
+`period_end + fiscal_year_end_mmdd` (submissions-derived) with nearest-quarter
+matching and threshold control (`max_day_delta`, default 30 days). In this mode,
+`source_fy/source_fp` are retained as audit metadata only.
+
 ### 2.2 Row Grain and Dedupe
 Output is long-form (multiple rows per ticker-quarter, one per canonical field
 candidate). Deterministic dedupe keeps the latest fact by `filed_date` then
@@ -95,6 +103,11 @@ candidate). Deterministic dedupe keeps the latest fact by `filed_date` then
 18. `is_component_tag`
 19. `source_system`
 20. `source_tag_map_version`
+21. `fiscal_year_end_mmdd`
+22. `fiscal_anchor_end`
+23. `fiscal_day_delta`
+24. `source_fy`
+25. `source_fp`
 
 ### 2.4 Current Scope Note
 `sec-normalize-long` captures mapped SEC facts and mapping metadata. It does not
