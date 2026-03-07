@@ -37,6 +37,6 @@ data
 !.agent/plans/**
 
 # resumes and plans folder
-resumes/
+#resumes/
 plans/
 

@@ -1,7 +1,12 @@
 # Trading Bot Agent Guide
 
 ## Project Purpose
-Build and operate a robust, auditable fundamentals pipeline for current S&P 500 companies, with SEC-first extensibility and reproducible outputs for screening and portfolio research.
+Build and operate a robust, auditable fundamentals pipeline for current S&P 500 companies with reproducible outputs for screening and portfolio research.
+
+## Current Provider Direction
+1. As of `2026-03-01`, the active provider direction for fundamentals fetching is SimFin.
+2. SEC filing ingestion remains in the repository as a legacy research path and audit reference, but it should not be treated as the production-recommended fundamentals source.
+3. The SimFin implementation target for this phase is documented in `resumes/RESUME_2026-03-01.md`.
 
 ## State Handoffs
 1. `resumes/`: session handoff notes ("state of the art") that capture current project status, decisions made, and the exact next steps to resume work later.
@@ -24,6 +29,10 @@ Main commands:
 ```powershell
 python -m trading_bot universe --as-of-date 2026-02-07
 python -m trading_bot legacy-fundamentals --start-date 2023-01-01 --end-date 2025-12-31
+```
+
+Legacy SEC commands still present in code (not the active provider direction for this phase):
+```powershell
 python -m trading_bot sec-map-cik --universe-path data/universe_current.csv --output-path data/reports/sec_cik_mapping.csv
 python -m trading_bot sec-ingest-raw --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/companyfacts --log-path data/reports/sec_ingestion_log.csv
 python -m trading_bot sec-ingest-submissions --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/submissions --log-path data/reports/sec_submissions_ingestion_log.csv
@@ -67,9 +76,9 @@ Linting:
 
 ## Repo Map
 1. `src/trading_bot/core`: shared settings/logging/exceptions utilities.
-2. `src/trading_bot/contracts`: typed SEC metric contract and mapping config.
-3. `src/trading_bot/connectors`: external source adapters.
-4. `src/trading_bot/steps`: source-facing and normalization pipeline steps.
+2. `src/trading_bot/contracts`: current schema/config contracts; SEC contract files remain for the legacy SEC path.
+3. `src/trading_bot/connectors`: external source adapters. Current code includes Wikipedia and SEC adapters; SimFin connector work is the next planned implementation.
+4. `src/trading_bot/steps`: source-facing and normalization pipeline steps. Current code includes legacy local processing plus SEC research stages.
 5. `src/trading_bot/workflows`: orchestration entrypoints that compose steps.
 6. `specs`: architecture and execution plans.
 7. `tests`: unit/integration tests.

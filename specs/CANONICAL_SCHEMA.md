@@ -1,115 +1,120 @@
-# Canonical SEC Contract and Long Output Schema
+# Canonical Fundamentals Schema
 
 ## Purpose
-Define the current SEC contract that is enforced in code and the current output
-shape produced by `sec-normalize-long`.
+Document the canonical fundamentals the project wants to capture as raw normalized fields and the derived fundamentals metrics the project wants to compute later.
 
-This stage is intentionally "raw and auditable":
-1. map SEC tags to canonical raw fields,
-2. keep source metadata for traceability,
-3. defer wide-table construction and ratio computation to later stages.
+This document is intentionally provider-agnostic.
+It defines what the pipeline should capture and compute, not how the data is fetched.
 
-## 1) SEC Metric Mapping Contract
+## 1) Canonical Yearly CSV Shape
+The canonical output format is:
+1. one CSV per year
+2. one row per `ticker, year, quarter`
+3. sorted in ascending alphabetical order by `ticker`
+4. within each ticker, sorted by `quarter` ascending (`1, 2, 3, 4`)
 
-Contract file:
-`src/trading_bot/contracts/sec_metric_map.yml`
+Example row order inside a yearly CSV:
+```text
+A 2023 1 ...
+A 2023 2 ...
+A 2023 3 ...
+A 2023 4 ...
+AAPL 2023 1 ...
+AAPL 2023 2 ...
+```
 
-Validator:
-`src/trading_bot/contracts/sec_metric_contract.py`
-
-Contract version in repo: `1.1.1` (append-only fallback tag expansion for sparse
-issuers; existing tag order remains unchanged and higher-priority tags still win).
-
-### 1.1 Required Canonical Fields
-The contract must define exactly these fields:
-1. Fetch-only raw fields:
-`saleq`, `niq`, `oiadpq`, `xintq`, `txtq`, `epspxq`, `actq`, `lctq`, `ppentq`,
-`gdwlq`, `ivltq`, `atq`, `ceqq`, `dlcq`, `dlttq`, `req`, `tstkq`, `oancfq`,
-`prstkcq`, `capxq`, `cheq`, `dvpq`, `cshfdq`.
-2. Helper fallback fields:
-`oancfy`, `prstkcy`, `cshopq`, `cshoq`.
-
-### 1.2 Required Mapping Keys (per metric)
-1. `fact_type`
-2. `unit_priority`
-3. `form_priority`
-4. `tag_priority`
-5. `transform_rule`
-6. `quality_tier`
-
-Optional:
-1. `helper_fallbacks`
-2. `component_tags`
-
-### 1.3 Allowed Values
-1. `fact_type`: `duration` or `instant`
-2. `form_priority`: `10-Q`, `10-K`
-3. `transform_rule`:
-`direct`, `q4_extract`, `direct_with_annual_fallback`, `direct_or_sum_components`
-4. `quality_tier`: `primary`, `fallback`, `proxy`
-
-### 1.4 Contract Constraints
-1. Compute-only metrics are forbidden in the SEC mapping contract.
-2. `helper_fallbacks` can reference only helper fields.
-3. `direct_or_sum_components` requires non-empty `component_tags`.
-
-## 2) SEC Long Facts Output
-
-Produced by:
-`python -m trading_bot sec-normalize-long ...`
-
-Default output:
-`data/processed/sec_facts_long_2023_2025.csv`
-
-### 2.1 Time Window
-Rows are filtered to `start_year <= fyearq <= end_year` (defaults: 2023-2025).
-
-When `fiscal_calendar_path` is supplied, `fyearq/fqtr` are resolved from
-`period_end + fiscal_year_end_mmdd` (submissions-derived) with nearest-quarter
-matching and threshold control (`max_day_delta`, default 30 days). In this mode,
-`source_fy/source_fp` are retained as audit metadata only.
-
-### 2.2 Row Grain and Dedupe
-Output is long-form (multiple rows per ticker-quarter, one per canonical field
-candidate). Deterministic dedupe keeps the latest fact by `filed_date` then
-`accn` for each key:
+Required leading columns:
 1. `ticker`
-2. `canonical_field`
-3. `fyearq`
-4. `fqtr`
-5. `period_end`
-6. `form_type`
-7. `source_tag`
-8. `unit`
+2. `year`
+3. `quarter`
 
-### 2.3 Output Columns
-1. `ticker`
-2. `cik`
-3. `fyearq`
-4. `fqtr`
-5. `period_start`
-6. `period_end`
-7. `filed_date`
-8. `form_type`
-9. `accn`
-10. `frame`
-11. `canonical_field`
-12. `value`
-13. `unit`
-14. `source_tag`
-15. `quality_tier`
-16. `fact_type`
-17. `transform_rule`
-18. `is_component_tag`
-19. `source_system`
-20. `source_tag_map_version`
-21. `fiscal_year_end_mmdd`
-22. `fiscal_anchor_end`
-23. `fiscal_day_delta`
-24. `source_fy`
-25. `source_fp`
+This row shape applies to both:
+1. the normalized raw fundamentals CSVs
+2. the computed ratios/features CSVs
 
-### 2.4 Current Scope Note
-`sec-normalize-long` captures mapped SEC facts and mapping metadata. It does not
-yet execute wide-table transforms (for example Q4 extraction or component
-summing) inside this step.
+## 2) Raw Fundamentals To Capture
+These are the normalized quarterly raw fields the pipeline should preserve before any derived ratios are computed.
+
+When stored in a Stage 1 yearly CSV, the row shape is:
+`ticker, year, quarter, <raw fundamentals...>`
+
+### 2.1 Core Raw Fields
+1. `saleq`: quarterly revenue / sales
+2. `niq`: quarterly net income
+3. `oiadpq`: quarterly operating income
+4. `xintq`: quarterly interest expense
+5. `txtq`: quarterly income tax expense
+6. `epspxq`: quarterly earnings per share
+7. `actq`: current assets
+8. `lctq`: current liabilities
+9. `ppentq`: property, plant, and equipment, net
+10. `gdwlq`: goodwill
+11. `ivltq`: long-term investments
+12. `atq`: total assets
+13. `ceqq`: common/shareholder equity
+14. `dlcq`: short-term debt / current debt
+15. `dlttq`: long-term debt
+16. `req`: retained earnings
+17. `tstkq`: treasury stock
+18. `oancfq`: operating cash flow
+19. `prstkcq`: share repurchases / stock buybacks
+20. `capxq`: capital expenditures
+21. `cheq`: cash and equivalents
+22. `dvpq`: dividends paid
+23. `cshfdq`: diluted shares outstanding
+
+### 2.2 Support Fields
+These fields are retained because they support fallback logic, comparisons, or later derived calculations.
+
+1. `oancfy`: annual operating cash flow support field
+2. `prstkcy`: annual share repurchases support field
+3. `cshopq`: common share repurchase support field
+4. `cshoq`: basic shares outstanding support field
+
+## 3) Derived Fundamentals Metrics To Compute
+These fields should be computed from the normalized raw fundamentals layer.
+They belong to Stage 2 of the architecture.
+
+When stored in a Stage 2 yearly CSV, the row shape is:
+`ticker, year, quarter, <computed metrics...>`
+
+### 3.1 Core Ratios And Features
+1. `Operating_Margin`
+2. `Net_Profit_Margin`
+3. `Current_Ratio`
+4. `ROA`
+5. `ROE`
+6. `Debt_to_Equity`
+7. `Treasury_Adjusted_Debt_to_Equity`
+8. `Book_Value`
+9. `Retained_Earnings_Growth`
+10. `Share_Repurchases`
+11. `Revenue_Growth`
+12. `EPS_Growth`
+13. `Return_on_Shareholder_Equity`
+14. `Free_Cash_Flow`
+15. `Net_Debt`
+16. `Dividends_Paid`
+17. `Shares_Outstanding_Diluted`
+18. `Short_Term_Debt`
+19. `Healthy_Long_Term_Debt`
+
+### 3.2 Deferred Market-Dependent Metrics
+These may be useful later, but they require an explicit market-price input and are not required for the current Stage 1 and Stage 2 focus.
+
+1. `P/E_Ratio`
+2. `Market_Cap`
+3. `P/B_Ratio`
+4. `Dividend_Yield`
+5. `Earnings_Yield`
+
+## 4) Stage Boundaries
+1. Stage 1 captures and normalizes the raw fundamentals fields.
+2. Stage 2 computes derived metrics from Stage 1 outputs only.
+3. Stage 3 may use Stage 2 outputs for scoring and ranking, but it does not introduce new accounting fundamentals.
+
+## 5) Canonical Intent
+1. The raw layer should remain as source-faithful as possible after normalization.
+2. The computed layer should be reproducible from the raw layer.
+3. Source choice must not change the meaning of the canonical fields.
+4. The yearly CSV contract should remain stable across all years.
