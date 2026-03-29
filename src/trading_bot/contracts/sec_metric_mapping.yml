@@ -6,7 +6,7 @@
 # 3. `transform_rule` describes downstream wide-table handling semantics.
 # 4. `quality_tier` marks confidence level of the selected signal.
 # 5. Helper fields at the bottom are fallback-only and not final screening metrics.
-version: "1.1.1"
+version: "1.1.2"
 description: "SEC companyfacts to canonical fundamentals mapping contract"
 metrics:
   # Income statement / duration fields that often need Q4 extraction downstream.
@@ -265,6 +265,16 @@ metrics:
     tag_priority:
       - "us-gaap:NetCashProvidedByUsedInOperatingActivities"
       - "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"
+    transform_rule: direct
+    quality_tier: fallback
+  capxy:
+    fact_type: duration
+    unit_priority: ["USD"]
+    form_priority: ["10-K"]
+    tag_priority:
+      - "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment"
+      - "us-gaap:CapitalExpendituresIncurredButNotYetPaid"
+      - "us-gaap:PaymentsToAcquireProductiveAssets"
     transform_rule: direct
     quality_tier: fallback
   prstkcy:

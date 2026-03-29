@@ -12,6 +12,37 @@ from functools import lru_cache
 from pathlib import Path
 
 
+def _load_dotenv_candidates() -> list[Path]:
+    """Return likely `.env` locations ordered from nearest to fallback."""
+    cwd = Path.cwd().resolve()
+    candidates = [cwd / ".env", *[parent / ".env" for parent in cwd.parents]]
+    repo_root = Path(__file__).resolve().parents[3]
+    repo_env = repo_root / ".env"
+    if repo_env not in candidates:
+        candidates.append(repo_env)
+    return candidates
+
+
+def _load_dotenv_into_environ() -> None:
+    """Populate `os.environ` from the first available `.env` file.
+
+    Existing environment variables win over `.env` entries.
+    """
+    for env_path in _load_dotenv_candidates():
+        if not env_path.exists() or not env_path.is_file():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if not key or key in os.environ:
+                continue
+            os.environ[key] = value.strip().strip("'").strip('"')
+        return
+
+
 def _env_int(name: str, default: int) -> int:
     """Read an integer environment variable with fallback to `default`.
 
@@ -65,6 +96,8 @@ class AppSettings:
     processed_data_dir: Path
     reports_data_dir: Path
     legacy_fundamentals_dir: Path
+    simfin_data_dir: Path
+    simfin_api_key: str | None
     universe_filename: str
     canonical_legacy_filename: str
 
@@ -76,6 +109,8 @@ def get_settings() -> AppSettings:
     Returns:
         A singleton `AppSettings` instance for the current process.
     """
+    _load_dotenv_into_environ()
+
     # Resolve root-relative paths first so downstream defaults stay consistent.
     data_root = Path(os.getenv("DATA_ROOT", "data"))
     raw_data_dir = Path(os.getenv("RAW_DATA_DIR", str(data_root / "raw")))
@@ -89,6 +124,12 @@ def get_settings() -> AppSettings:
         os.getenv(
             "LEGACY_FUNDAMENTALS_DIR",
             str(data_root / "raw" / "Processed-Fundamentals"),
+        )
+    )
+    simfin_data_dir = Path(
+        os.getenv(
+            "SIMFIN_DATA_DIR",
+            str(data_root / "raw" / "vendor" / "simfin_cache"),
         )
     )
 
@@ -115,6 +156,8 @@ def get_settings() -> AppSettings:
         processed_data_dir=processed_data_dir,
         reports_data_dir=reports_data_dir,
         legacy_fundamentals_dir=legacy_fundamentals_dir,
+        simfin_data_dir=simfin_data_dir,
+        simfin_api_key=os.getenv("SIMFIN_API_KEY"),
         universe_filename=os.getenv("UNIVERSE_FILENAME", "universe_current.csv"),
         canonical_legacy_filename=os.getenv(
             "CANONICAL_LEGACY_FILENAME",

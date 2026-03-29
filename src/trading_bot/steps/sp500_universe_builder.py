@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..connectors.sp500 import SP500Constituents
+from ..connectors.wikipedia_sp500_client import SP500Constituents
 
 
 def _normalize_ticker(value: object) -> str | None:

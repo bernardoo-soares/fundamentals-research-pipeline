@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 
-from ..connectors.sec import SecClient
+from ..connectors.sec_client import SecClient
 from ..core.exceptions import SecRequestError
 from ..core.logging import get_logger, utc_now_iso
 from ..core.settings import get_settings

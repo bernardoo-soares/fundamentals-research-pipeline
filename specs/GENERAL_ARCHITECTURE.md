@@ -4,12 +4,12 @@
 Build a fundamentals pipeline that produces normalized yearly CSV outputs and derived fundamentals-ratio yearly CSV outputs for the current universe, with a later extension for company scoring and yearly ranking.
 
 ## Time Horizon
-1. Historical normalized base: `2006-2022`
-   - Source for this phase: already computed local historical data.
+1. Historical normalized base available from local files: `2006-2023`
+   - Source for this path: `data/raw/Processed-Fundamentals/*.csv`.
 2. Current extension window: `2023-2025`
    - Source for this phase: SimFin API.
 3. `2023-2025` should be treated as fully SimFin-driven for the current implementation phase.
-4. The local historical path should not be used for `2023` because coverage there is not sufficient for the intended final dataset.
+4. Final provider-selection policy for overlapping windows remains separate from the local Stage 1 historical publisher.
 
 ## Stage Goals
 
@@ -18,7 +18,7 @@ Primary objective:
 - Build normalized yearly fundamentals CSVs for `2006` through `2025`.
 
 Current plan:
-1. Use already computed local historical data for `2006-2022`.
+1. Use already computed local historical data for `2006-2023` when building the local raw Stage 1 artifacts.
 2. Use SimFin API for `2023-2025` inclusive.
 3. Normalize both source paths into one canonical quarterly schema.
 4. Emit one yearly CSV per year.
@@ -78,15 +78,15 @@ Stage 1 then appends normalized raw fundamentals columns.
 Stage 2 then appends computed metrics columns.
 
 ## Source Allocation For This Phase
-1. `2006-2022`
-   - use local historical data
+1. `2006-2023`
+   - local historical raw-only Stage 1 path available from `data/raw/Processed-Fundamentals`
 2. `2023-2025`
    - use SimFin only
-3. Do not use the local historical path for `2023` in the final dataset for this phase.
+3. Final precedence across overlapping source windows is a downstream integration decision.
 
 ## Core Data Flow
 1. Build or load the current universe.
-2. Load historical normalized-compatible raw fundamentals for `2006-2022`.
+2. Load historical normalized-compatible raw fundamentals for `2006-2023`.
 3. Fetch fundamentals for `2023-2025` from SimFin.
 4. Map both paths into the same canonical quarterly schema.
 5. Write yearly normalized fundamentals CSVs.
@@ -106,7 +106,7 @@ Stage 2 then appends computed metrics columns.
 4. Deterministic keys:
    - quarterly records should use stable keys centered on `ticker`, `year`, and `quarter`.
 5. Explicit source windows:
-   - local historical data is the intended path for `2006-2022`;
+   - local historical raw files are an implemented path for `2006-2023`;
    - SimFin is the intended path for `2023-2025`.
 6. Yearly outputs:
    - output artifacts are organized as one CSV per year per stage.
@@ -127,15 +127,31 @@ Stage 2 then appends computed metrics columns.
 
 ## Active Inputs For This Phase
 1. `data/universe_current.csv`
-2. local historical data for `2006-2022`
+2. `data/raw/Processed-Fundamentals/*.csv` for the local historical Stage 1 path
 3. `data/raw/vendor/simfin_cache/**` for `2023-2025`
+4. production SimFin mapping reference:
+   - `specs/SIMFIN_STAGE1_MAPPING.md`
 
 ## Target Output Families
 
 ### Stage 1 Outputs
 1. normalized yearly fundamentals CSVs for `2006-2025`
 2. each file contains rows shaped as `ticker, year, quarter, <raw fundamentals...>`
-3. optional QA artifacts for coverage, missing rows, missing fields, and unresolved source issues
+3. implemented local historical Stage 1 artifacts:
+   - `data/processed/raw_fundamentals_<year>.csv`
+   - `data/reports/legacy_raw_coverage_<start>_<end>.csv`
+   - `data/reports/legacy_raw_missing_universe_<start>_<end>.csv`
+   - `data/reports/legacy_raw_conflicts_<start>_<end>.csv`
+4. optional additional QA artifacts for other provider paths
+5. implemented SimFin raw fundamentals artifacts for `2023-2025`:
+   - `data/processed/raw_fundamentals_2023.csv`
+   - `data/processed/raw_fundamentals_2024.csv`
+   - `data/processed/raw_fundamentals_2025.csv`
+   - `data/reports/simfin_raw_coverage_2023_2025.csv`
+   - `data/reports/simfin_raw_missing_universe_2023_2025.csv`
+   - `data/reports/simfin_raw_missing_rows_2023_2025.csv`
+   - `data/reports/simfin_raw_missing_fields_2023_2025.csv`
+   - `data/reports/simfin_raw_family_conflicts_2023_2025.csv`
 
 ### Stage 2 Outputs
 1. yearly computed ratios/features CSVs for `2006-2025`

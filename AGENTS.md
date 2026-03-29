@@ -37,8 +37,8 @@ python -m trading_bot sec-map-cik --universe-path data/universe_current.csv --ou
 python -m trading_bot sec-ingest-raw --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/companyfacts --log-path data/reports/sec_ingestion_log.csv
 python -m trading_bot sec-ingest-submissions --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/submissions --log-path data/reports/sec_submissions_ingestion_log.csv
 python -m trading_bot sec-build-fiscal-calendar --submissions-dir data/raw/sec/submissions --mapping-path data/reports/sec_cik_mapping.csv --output-path data/reports/sec_fiscal_calendar.csv
-python -m trading_bot sec-normalize-long --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_map.yml --output-path data/processed/sec_facts_long_2023_2025.csv --start-year 2023 --end-year 2025
-python -m trading_bot sec-build-processed --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_map.yml --fiscal-calendar-path data/reports/sec_fiscal_calendar.csv --sec-cik-mapping-path data/reports/sec_cik_mapping.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
+python -m trading_bot sec-normalize-long --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_mapping.yml --output-path data/processed/sec_facts_long_2023_2025.csv --start-year 2023 --end-year 2025
+python -m trading_bot sec-build-processed --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_mapping.yml --fiscal-calendar-path data/reports/sec_fiscal_calendar.csv --sec-cik-mapping-path data/reports/sec_cik_mapping.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
 ```
 
 ## Pre-PR Quality Gate
@@ -97,9 +97,15 @@ Linting:
 ## Scoped Overrides
 Current directory-scoped instruction files:
 1. `src/AGENTS.override.md`
-2. `tests/AGENTS.override.md`
-3. `specs/AGENTS.override.md`
-4. `data/AGENTS.override.md` (local workspace guidance; may be VCS-ignored)
+2. `src/trading_bot/AGENTS.override.md`
+3. `src/trading_bot/core/AGENTS.override.md`
+4. `src/trading_bot/connectors/AGENTS.override.md`
+5. `src/trading_bot/contracts/AGENTS.override.md`
+6. `src/trading_bot/steps/AGENTS.override.md`
+7. `src/trading_bot/workflows/AGENTS.override.md`
+8. `tests/AGENTS.override.md`
+9. `specs/AGENTS.override.md`
+10. `data/AGENTS.override.md` (local workspace guidance; may be VCS-ignored)
 
 ## Planning Standard
 1. For non-trivial work, follow `.agent/PLANS.md`.

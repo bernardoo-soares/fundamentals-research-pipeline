@@ -5,12 +5,12 @@ S&P 500 fundamentals pipeline with a simple layered `src/` layout.
 Current provider direction:
 - As of `2026-03-01`, SimFin is the agreed provider for fundamentals fetching in this phase.
 - The SEC pipeline remains in the repository as a legacy research path and audit reference, but it is not the production-recommended data source.
-- The SimFin implementation target is captured in `resumes/RESUME_2026-03-01.md` and is not yet wired into `src/trading_bot` as a CLI stage.
+- The current SimFin raw fundamentals implementation is cache-first: it reads from `data/raw/vendor/simfin_cache` when files are present and only falls back to the SimFin package loaders when cache files are missing.
 
 ## Structure
 - `src/trading_bot/core`: settings, logging, exceptions
 - `src/trading_bot/contracts`: current schema/config contracts; SEC contract files remain for the legacy SEC path
-- `src/trading_bot/connectors`: external source adapters (currently Wikipedia + SEC; SimFin connector pending)
+- `src/trading_bot/connectors`: external source adapters (currently Wikipedia, SEC, and SimFin cache/package loading)
 - `src/trading_bot/steps`: runnable pipeline steps that write artifacts
 - `src/trading_bot/workflows`: multi-step orchestration flows
 - `data/raw`, `data/processed`, `data/reports`: data zones
@@ -26,29 +26,33 @@ pip install -e .[dev]
 Create `.env` from `.env.example` and adjust paths/timeouts if needed.
 
 ## Current Status
-- Active implementation direction: universe-wide SimFin pipeline with strict `2 requests/second` throttling.
-- Current runnable CLI in `src/trading_bot` still exposes the older universe/legacy/SEC stages only.
+- Active implementation direction: SimFin-backed raw fundamentals for `2023-2025`.
+- Current runnable CLI now includes a dedicated `simfin-raw-fundamentals` command for the raw fundamentals export path.
 - SimFin validation references:
   - `tests/smoke_simfin_2023.py`
   - `tests/smoke_simfin_single_ticker.py`
+- Production SimFin mapping reference:
+  - `specs/SIMFIN_STAGE1_MAPPING.md`
 
 ## CLI
 Currently implemented commands:
 ```powershell
 python -m trading_bot universe --as-of-date 2026-02-07
 python -m trading_bot legacy-fundamentals --start-date 2023-01-01 --end-date 2025-12-31
+python -m trading_bot legacy-raw-stage1 --raw-dir data/raw/Processed-Fundamentals --output-dir data/processed --reports-dir data/reports --start-year 2006 --end-year 2023
+python -m trading_bot simfin-raw-fundamentals --universe-path data/universe_current.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
 python -m trading_bot sec-map-cik --universe-path data/universe_current.csv --output-path data/reports/sec_cik_mapping.csv
 python -m trading_bot sec-ingest-raw --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/companyfacts --log-path data/reports/sec_ingestion_log.csv
 python -m trading_bot sec-ingest-submissions --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/submissions --log-path data/reports/sec_submissions_ingestion_log.csv
 python -m trading_bot sec-build-fiscal-calendar --submissions-dir data/raw/sec/submissions --mapping-path data/reports/sec_cik_mapping.csv --output-path data/reports/sec_fiscal_calendar.csv
-python -m trading_bot sec-normalize-long --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_map.yml --output-path data/processed/sec_facts_long_2023_2025.csv --start-year 2023 --end-year 2025
-python -m trading_bot sec-build-processed --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_map.yml --fiscal-calendar-path data/reports/sec_fiscal_calendar.csv --sec-cik-mapping-path data/reports/sec_cik_mapping.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
+python -m trading_bot sec-normalize-long --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_mapping.yml --output-path data/processed/sec_facts_long_2023_2025.csv --start-year 2023 --end-year 2025
+python -m trading_bot sec-build-processed --raw-dir data/raw/sec/companyfacts --mapping-path src/trading_bot/contracts/sec_metric_mapping.yml --fiscal-calendar-path data/reports/sec_fiscal_calendar.csv --sec-cik-mapping-path data/reports/sec_cik_mapping.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
 ```
 
 Notes:
 - The SEC commands above remain callable because they still exist in code.
 - They are documented here as the current runtime surface, not as the recommended fundamentals provider path.
-- A SimFin CLI command has not been added yet.
+- SimFin raw fundamentals uses the local cache first and loads missing datasets via the SimFin package when needed.
 
 Pipeline stages are currently executed command-by-command from the CLI.
 
@@ -57,6 +61,18 @@ Currently generated when the corresponding implemented CLI stage runs:
 - `data/universe_current.csv`
 - `data/processed/canonical_legacy_q.csv`
 - `data/processed/fundamentals_q_<year>.csv`
+- `data/processed/raw_fundamentals_<year>.csv` (raw-only local historical Stage 1 output)
+- `data/reports/legacy_raw_coverage_2006_2023.csv`
+- `data/reports/legacy_raw_missing_universe_2006_2023.csv`
+- `data/reports/legacy_raw_conflicts_2006_2023.csv`
+- `data/processed/raw_fundamentals_2023.csv`
+- `data/processed/raw_fundamentals_2024.csv`
+- `data/processed/raw_fundamentals_2025.csv`
+- `data/reports/simfin_raw_coverage_2023_2025.csv`
+- `data/reports/simfin_raw_missing_universe_2023_2025.csv`
+- `data/reports/simfin_raw_missing_rows_2023_2025.csv`
+- `data/reports/simfin_raw_missing_fields_2023_2025.csv`
+- `data/reports/simfin_raw_family_conflicts_2023_2025.csv`
 - `data/reports/sec_cik_mapping.csv`
 - `data/reports/sec_ingestion_log.csv`
 - `data/raw/sec/companyfacts/*.json`
@@ -69,7 +85,13 @@ Currently generated when the corresponding implemented CLI stage runs:
 - `data/reports/sec_fundamentals_conflicts_2023_2025.csv`
 - `data/reports/sec_fiscal_resolution_unresolved_2023_2025.csv`
 
-Ratio computation is intentionally deferred for now.
+`legacy-raw-stage1` publishes raw and support fields only with leading columns
+`ticker,year,quarter`. Ratio computation is intentionally deferred to a later
+stage.
+
+`simfin-raw-fundamentals` publishes the same raw fundamentals contract for
+`2023-2025`, using the field mapping policy in `specs/SIMFIN_STAGE1_MAPPING.md`
+and leaving unsupported fields explicitly null.
 
 ## Tests
 ```powershell

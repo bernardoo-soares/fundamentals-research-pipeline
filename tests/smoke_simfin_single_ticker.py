@@ -303,6 +303,7 @@ def main() -> int:
         FieldRule("dvpq", "cashflow", "Dividends Paid", "cash_outflow_as_positive"),
         FieldRule("cshfdq", "income", "Shares (Diluted)", "direct"),
         FieldRule("oancfy", "cashflow", "Net Cash from Operating Activities", "direct"),
+        FieldRule("capxy", "cashflow", "Change in Fixed Assets & Intangibles", "cash_outflow_as_positive"),
         FieldRule("prstkcy", "cashflow", "Cash from (Repurchase of) Equity", "cash_outflow_as_positive"),
         FieldRule("cshoq", "income", "Shares (Basic)", "direct"),
         FieldRule("cshopq", "cashflow", "Cash from (Repurchase of) Equity", "cash_outflow_as_positive"),

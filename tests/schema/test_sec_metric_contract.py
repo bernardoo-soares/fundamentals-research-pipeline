@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from trading_bot.contracts.sec_metric_contract import (
+from trading_bot.contracts.sec_metric_mapping_schema import (
     ALLOWED_FORMS,
     COMPUTE_ONLY_FIELDS,
     FETCH_ONLY_RAW_FIELDS,
@@ -15,7 +15,7 @@ from trading_bot.contracts.sec_metric_contract import (
 
 
 def test_mapping_contract_file_exists() -> None:
-    path = Path("src/trading_bot/contracts/sec_metric_map.yml")
+    path = Path("src/trading_bot/contracts/sec_metric_mapping.yml")
     assert path.exists(), "Expected sec metric mapping file to exist."
 
 
@@ -85,7 +85,7 @@ def test_extended_fallback_tags_present() -> None:
 
 
 def test_failing_when_required_field_missing(tmp_path: Path) -> None:
-    bad_contract = tmp_path / "sec_metric_map.yml"
+    bad_contract = tmp_path / "sec_metric_mapping.yml"
     bad_contract.write_text(
         "version: '1.0.0'\n"
         "description: 'bad'\n"

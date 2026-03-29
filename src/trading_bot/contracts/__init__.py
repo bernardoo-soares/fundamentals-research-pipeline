@@ -1,10 +1,26 @@
-﻿"""SEC contract package exports.
+"""Contract package exports for provider-agnostic and SEC-specific schemas."""
 
-This package defines and validates the canonical mapping contract that links SEC
-XBRL tags to raw quarterly fundamentals fields.
-"""
-
-from .sec_metric_contract import (
+from .stage1_fundamentals_schema import (
+    CORE_RAW_FIELDS,
+    STAGE1_KEY_COLUMNS,
+    STAGE1_OUTPUT_COLUMNS,
+    SUPPORT_RAW_FIELDS,
+    stage1_yearly_columns,
+    validate_stage1_frame_columns,
+)
+from .legacy_stage1_audit_schema import (
+    AUDIT_SUMMARY_COLUMNS,
+    FIELD_NULLS_COLUMNS,
+    KEY_ISSUES_COLUMNS,
+    RECONCILIATION_COLUMNS,
+    RECONCILIATION_SUMMARY_COLUMNS,
+    REPORT_COLUMNS,
+    REVIEW_SAMPLE_COLUMNS,
+    SCHEMA_ISSUES_COLUMNS,
+    SUSPICIOUS_VALUES_COLUMNS,
+    validate_report_columns,
+)
+from .sec_metric_mapping_schema import (
     COMPUTE_ONLY_FIELDS,
     FETCH_ONLY_RAW_FIELDS,
     HELPER_FALLBACK_FIELDS,
@@ -16,15 +32,30 @@ from .sec_metric_contract import (
     validate_contract,
 )
 
-# Re-export contract primitives for steps/tests.
 __all__ = [
+    "CORE_RAW_FIELDS",
     "COMPUTE_ONLY_FIELDS",
     "FETCH_ONLY_RAW_FIELDS",
+    "FIELD_NULLS_COLUMNS",
     "HELPER_FALLBACK_FIELDS",
+    "KEY_ISSUES_COLUMNS",
     "MetricMapping",
+    "RECONCILIATION_COLUMNS",
+    "RECONCILIATION_SUMMARY_COLUMNS",
     "REQUIRED_CANONICAL_FIELDS",
+    "REPORT_COLUMNS",
+    "REVIEW_SAMPLE_COLUMNS",
+    "SCHEMA_ISSUES_COLUMNS",
     "SecMetricContract",
+    "STAGE1_KEY_COLUMNS",
+    "STAGE1_OUTPUT_COLUMNS",
+    "SUPPORT_RAW_FIELDS",
+    "SUSPICIOUS_VALUES_COLUMNS",
+    "AUDIT_SUMMARY_COLUMNS",
     "get_metric_mapping",
     "load_sec_metric_contract",
+    "stage1_yearly_columns",
     "validate_contract",
+    "validate_report_columns",
+    "validate_stage1_frame_columns",
 ]

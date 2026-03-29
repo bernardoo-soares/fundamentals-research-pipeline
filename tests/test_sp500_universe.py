@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot.steps import universe
+from trading_bot.steps import sp500_universe_builder as universe
 
 
 class _FakeConstituents:

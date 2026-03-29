@@ -67,9 +67,38 @@ When stored in a Stage 1 yearly CSV, the row shape is:
 These fields are retained because they support fallback logic, comparisons, or later derived calculations.
 
 1. `oancfy`: annual operating cash flow support field
-2. `prstkcy`: annual share repurchases support field
-3. `cshopq`: common share repurchase support field
-4. `cshoq`: basic shares outstanding support field
+2. `capxy`: annual capital expenditures support field
+3. `prstkcy`: annual share repurchases support field
+4. `cshopq`: common share repurchase support field
+5. `cshoq`: basic shares outstanding support field
+
+### 2.3 Published Local Historical Stage 1 Artifacts
+For the implemented local historical path sourced from
+`data/raw/Processed-Fundamentals`, the published Stage 1 artifacts are:
+1. `data/processed/raw_fundamentals_<year>.csv`
+2. one file per year in the requested range
+3. leading columns fixed as `ticker, year, quarter`
+4. raw and support fields only; no computed ratios
+
+Associated QA artifacts for this path live under `data/reports/`:
+1. `legacy_raw_coverage_<start>_<end>.csv`
+2. `legacy_raw_missing_universe_<start>_<end>.csv`
+3. `legacy_raw_conflicts_<start>_<end>.csv`
+
+### 2.4 SimFin Raw Fundamentals Mapping Reference
+The SimFin `2023-2025` implementation should use:
+
+1. `specs/SIMFIN_STAGE1_MAPPING.md`
+
+That reference defines, field by field, whether the SimFin mapping is:
+
+1. `direct`
+2. `derived`
+3. `proxy`
+4. `unsupported`
+
+Unsupported fields should remain null and be surfaced in explicit QA artifacts
+rather than being filled with weak or semantically incorrect substitutes.
 
 ## 3) Derived Fundamentals Metrics To Compute
 These fields should be computed from the normalized raw fundamentals layer.

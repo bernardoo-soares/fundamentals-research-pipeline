@@ -43,6 +43,7 @@ FETCH_ONLY_RAW_FIELDS: tuple[str, ...] = (
 # Helper fields allowed only for fallback logic inside transform rules.
 HELPER_FALLBACK_FIELDS: tuple[str, ...] = (
     "oancfy",
+    "capxy",
     "prstkcy",
     "cshopq",
     "cshoq",
@@ -122,7 +123,7 @@ class SecMetricContract:
 
 def _default_contract_path() -> Path:
     """Return repository-default SEC contract path."""
-    return Path(__file__).with_name("sec_metric_map.yml")
+    return Path(__file__).with_name("sec_metric_mapping.yml")
 
 
 def _expect_mapping(value: Any, *, context: str) -> dict[str, Any]:

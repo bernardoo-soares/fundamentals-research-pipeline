@@ -7,18 +7,23 @@ from pathlib import Path
 
 from .core.logging import configure_logging, get_logger
 from .core.settings import get_settings
-from .steps.legacy_fundamentals import build_legacy_fundamentals
-from .steps.sec_fundamentals import (
+from .steps.legacy_processed_fundamentals_builder import (
+    build_legacy_fundamentals,
+    build_legacy_raw_stage1,
+)
+from .steps.legacy_stage1_output_audit import run_legacy_stage1_audit
+from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
+from .steps.sec_companyfacts_pipeline import (
     build_sec_cik_mapping,
     build_sec_processed_fundamentals,
     normalize_sec_facts_long,
     run_sec_raw_ingestion,
 )
-from .steps.sec_submissions import (
+from .steps.sec_submissions_pipeline import (
     build_sec_fiscal_calendar,
     run_sec_submissions_ingestion,
 )
-from .steps.universe import build_sp500_current_universe
+from .steps.sp500_universe_builder import build_sp500_current_universe
 
 LOG = get_logger(__name__)
 
@@ -77,6 +82,71 @@ def _build_parser() -> argparse.ArgumentParser:
         "--canonical-filename",
         default=settings.canonical_legacy_filename,
     )
+
+    legacy_raw_parser = subparsers.add_parser(
+        "legacy-raw-stage1",
+        help="Build raw-only yearly canonical fundamentals from local legacy CSV files.",
+    )
+    legacy_raw_parser.add_argument(
+        "--universe-path",
+        default=str(Path(settings.data_root) / settings.universe_filename),
+    )
+    legacy_raw_parser.add_argument(
+        "--raw-dir",
+        default=str(settings.legacy_fundamentals_dir),
+    )
+    legacy_raw_parser.add_argument(
+        "--output-dir",
+        default=str(settings.processed_data_dir),
+    )
+    legacy_raw_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    legacy_raw_parser.add_argument("--start-year", type=int, default=2006)
+    legacy_raw_parser.add_argument("--end-year", type=int, default=2023)
+
+    simfin_raw_parser = subparsers.add_parser(
+        "simfin-raw-fundamentals",
+        help="Build yearly raw fundamentals CSVs from SimFin quarterly data.",
+    )
+    simfin_raw_parser.add_argument(
+        "--universe-path",
+        default=str(Path(settings.data_root) / settings.universe_filename),
+    )
+    simfin_raw_parser.add_argument(
+        "--output-dir",
+        default=str(settings.processed_data_dir),
+    )
+    simfin_raw_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    simfin_raw_parser.add_argument("--start-year", type=int, default=2023)
+    simfin_raw_parser.add_argument("--end-year", type=int, default=2025)
+
+    legacy_audit_parser = subparsers.add_parser(
+        "legacy-stage1-audit",
+        help="Audit published raw_fundamentals_<year>.csv against legacy source files.",
+    )
+    legacy_audit_parser.add_argument(
+        "--universe-path",
+        default=str(Path(settings.data_root) / settings.universe_filename),
+    )
+    legacy_audit_parser.add_argument(
+        "--raw-dir",
+        default=str(settings.legacy_fundamentals_dir),
+    )
+    legacy_audit_parser.add_argument(
+        "--processed-dir",
+        default=str(settings.processed_data_dir),
+    )
+    legacy_audit_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    legacy_audit_parser.add_argument("--start-year", type=int, default=2006)
+    legacy_audit_parser.add_argument("--end-year", type=int, default=2023)
 
     sec_map_parser = subparsers.add_parser(
         "sec-map-cik",
@@ -154,7 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sec_norm_parser.add_argument(
         "--mapping-path",
-        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_map.yml"),
+        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_mapping.yml"),
     )
     sec_norm_parser.add_argument(
         "--output-path",
@@ -176,7 +246,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sec_processed_parser.add_argument(
         "--mapping-path",
-        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_map.yml"),
+        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_mapping.yml"),
     )
     sec_processed_parser.add_argument(
         "--fiscal-calendar-path",
@@ -246,6 +316,76 @@ def main() -> None:
         )
         LOG.info("Legacy fundamentals build completed with %d rows.", len(df))
         print(f"canonical_rows={len(df)}")
+        return
+
+    if args.command == "legacy-raw-stage1":
+        LOG.info(
+            "Running legacy raw Stage 1 build: universe_path=%s raw_dir=%s output_dir=%s "
+            "reports_dir=%s start_year=%d end_year=%d",
+            args.universe_path,
+            args.raw_dir,
+            args.output_dir,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+        )
+        artifacts = build_legacy_raw_stage1(
+            universe_path=args.universe_path,
+            raw_dir=args.raw_dir,
+            output_dir=args.output_dir,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+        )
+        LOG.info("Legacy raw Stage 1 build completed: %s", artifacts)
+        for key, value in artifacts.items():
+            print(f"{key}={value}")
+        return
+
+    if args.command == "legacy-stage1-audit":
+        LOG.info(
+            "Running legacy Stage 1 audit: universe_path=%s raw_dir=%s processed_dir=%s "
+            "reports_dir=%s start_year=%d end_year=%d",
+            args.universe_path,
+            args.raw_dir,
+            args.processed_dir,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+        )
+        artifacts = run_legacy_stage1_audit(
+            universe_path=args.universe_path,
+            raw_dir=args.raw_dir,
+            processed_dir=args.processed_dir,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+        )
+        LOG.info("Legacy Stage 1 audit completed: %s", artifacts)
+        for key, value in artifacts.items():
+            print(f"{key}={value}")
+        return
+
+    if args.command == "simfin-raw-fundamentals":
+        LOG.info(
+            "Running SimFin raw fundamentals build: universe_path=%s output_dir=%s "
+            "reports_dir=%s start_year=%d end_year=%d",
+            args.universe_path,
+            args.output_dir,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+        )
+        artifacts = build_simfin_raw_fundamentals(
+            universe_path=args.universe_path,
+            output_dir=args.output_dir,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+        )
+        LOG.info("SimFin raw fundamentals build completed: %s", artifacts)
+        for key, value in artifacts.items():
+            print(f"{key}={value}")
         return
 
     if args.command == "sec-map-cik":
