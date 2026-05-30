@@ -7,10 +7,6 @@ from typing import Any
 
 import pandas as pd
 
-from ..contracts.stage1_fundamentals_schema import (
-    STAGE1_KEY_COLUMNS,
-    STAGE1_OUTPUT_COLUMNS,
-)
 from ..contracts.legacy_stage1_audit_schema import (
     AUDIT_SUMMARY_COLUMNS,
     FIELD_NULLS_COLUMNS,
@@ -22,8 +18,11 @@ from ..contracts.legacy_stage1_audit_schema import (
     SUSPICIOUS_VALUES_COLUMNS,
     validate_report_columns,
 )
+from ..contracts.stage1_fundamentals_schema import (
+    STAGE1_KEY_COLUMNS,
+    STAGE1_OUTPUT_COLUMNS,
+)
 from .legacy_processed_fundamentals_builder import build_legacy_raw_stage1_compare_frame
-
 
 NEGATIVE_BALANCE_FIELDS: tuple[str, ...] = ("actq", "atq", "cheq", "cshfdq", "cshoq")
 
@@ -472,7 +471,11 @@ def run_legacy_stage1_audit(
         field_nulls = build_field_nulls_report(processed, year)
         field_null_frames.append(field_nulls)
 
-        quarter_counts = processed.groupby("ticker")["quarter"].nunique() if not processed.empty else pd.Series(dtype="int64")
+        quarter_counts = (
+            processed.groupby("ticker")["quarter"].nunique()
+            if not processed.empty
+            else pd.Series(dtype="int64")
+        )
         summary_rows.extend(
             [
                 _summary_row(
@@ -549,7 +552,9 @@ def run_legacy_stage1_audit(
 
     _write_report(pd.concat(summary_frames, ignore_index=True), summary_output, "summary")
     _write_report(
-        pd.concat(schema_issue_frames, ignore_index=True) if schema_issue_frames else _empty_frame(SCHEMA_ISSUES_COLUMNS),
+        pd.concat(schema_issue_frames, ignore_index=True)
+        if schema_issue_frames
+        else _empty_frame(SCHEMA_ISSUES_COLUMNS),
         schema_output,
         "schema_issues",
     )
@@ -574,12 +579,16 @@ def run_legacy_stage1_audit(
         "reconciliation_summary",
     )
     _write_report(
-        pd.concat(suspicious_frames, ignore_index=True) if suspicious_frames else _empty_frame(SUSPICIOUS_VALUES_COLUMNS),
+        pd.concat(suspicious_frames, ignore_index=True)
+        if suspicious_frames
+        else _empty_frame(SUSPICIOUS_VALUES_COLUMNS),
         suspicious_output,
         "suspicious_values",
     )
     _write_report(
-        pd.concat(review_sample_frames, ignore_index=True) if review_sample_frames else _empty_frame(REVIEW_SAMPLE_COLUMNS),
+        pd.concat(review_sample_frames, ignore_index=True)
+        if review_sample_frames
+        else _empty_frame(REVIEW_SAMPLE_COLUMNS),
         review_sample_output,
         "review_sample",
     )

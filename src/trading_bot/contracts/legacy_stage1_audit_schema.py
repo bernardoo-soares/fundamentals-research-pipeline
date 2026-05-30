@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
-
+from collections.abc import Sequence
 
 AUDIT_SUMMARY_COLUMNS: tuple[str, ...] = (
     "year",

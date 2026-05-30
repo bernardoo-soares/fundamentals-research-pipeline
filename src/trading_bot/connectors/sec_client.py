@@ -5,13 +5,13 @@ from __future__ import annotations
 import random
 import time
 from collections import defaultdict
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import requests
 
 from ..core.exceptions import SecRateLimitError, SecRequestError
 from ..core.logging import get_logger
-
 
 # Status codes that should trigger exponential backoff and retry behavior.
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}

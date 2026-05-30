@@ -11,23 +11,23 @@ from __future__ import annotations
 import json
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import requests
 
-from ..contracts.sec_metric_mapping_schema import (
-    MetricMapping,
-    load_sec_metric_contract,
-)
 from ..connectors.sec_client import (
     SecClient,
     build_ticker_reference_lookup,
     fetch_sec_ticker_reference,
     iter_companyfacts_rows,
     normalize_ticker,
+)
+from ..contracts.sec_metric_mapping_schema import (
+    MetricMapping,
+    load_sec_metric_contract,
 )
 from ..core.exceptions import SecRequestError
 from ..core.logging import get_logger, utc_now_iso
@@ -36,7 +36,6 @@ from .sec_fiscal_period_resolver import (
     normalize_fiscal_year_end_mmdd,
     resolve_fiscal_quarter,
 )
-
 
 LOG = get_logger(__name__)
 
@@ -47,7 +46,7 @@ def _utc_now_iso() -> str:
     This local helper avoids importing datetime details at call sites and keeps
     mapping artifacts timestamped consistently.
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def build_sec_cik_mapping(

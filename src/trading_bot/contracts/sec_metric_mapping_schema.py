@@ -12,7 +12,6 @@ from typing import Any
 
 import yaml
 
-
 # Canonical raw fields pulled directly from source systems (not derived metrics).
 FETCH_ONLY_RAW_FIELDS: tuple[str, ...] = (
     "saleq",

@@ -7,14 +7,14 @@ will populate the configured cache directory.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 
 from ..core.exceptions import ConfigurationError, DataSourceError
 from ..core.settings import get_settings
-
 
 SIMFIN_QUARTERLY_DATASETS: dict[str, dict[str, str]] = {
     "income_general": {

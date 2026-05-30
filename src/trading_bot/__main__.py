@@ -12,7 +12,6 @@ from .steps.legacy_processed_fundamentals_builder import (
     build_legacy_raw_stage1,
 )
 from .steps.legacy_stage1_output_audit import run_legacy_stage1_audit
-from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
 from .steps.sec_companyfacts_pipeline import (
     build_sec_cik_mapping,
     build_sec_processed_fundamentals,
@@ -23,6 +22,7 @@ from .steps.sec_submissions_pipeline import (
     build_sec_fiscal_calendar,
     run_sec_submissions_ingestion,
 )
+from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
 from .steps.sp500_universe_builder import build_sp500_current_universe
 
 LOG = get_logger(__name__)
@@ -273,7 +273,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """CLI dispatcher that routes commands to pipeline step functions."""
-    settings = get_settings()
     parser = _build_parser()
     args = parser.parse_args()
     configure_logging(str(args.log_level).upper())

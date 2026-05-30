@@ -7,7 +7,6 @@ single provider implementation.
 
 from __future__ import annotations
 
-
 CORE_RAW_FIELDS: tuple[str, ...] = (
     "saleq",
     "niq",

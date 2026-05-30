@@ -15,7 +15,6 @@ from ..contracts.stage1_fundamentals_schema import (
 )
 from ..core.settings import get_settings
 
-
 SIMFIN_FIELDS: tuple[str, ...] = (*CORE_RAW_FIELDS, *SUPPORT_RAW_FIELDS)
 SIMFIN_MISSING_COLUMNS: tuple[str, ...] = ("ticker", "reason")
 SIMFIN_MISSING_ROW_COLUMNS: tuple[str, ...] = ("ticker", "year", "quarter", "reason")
