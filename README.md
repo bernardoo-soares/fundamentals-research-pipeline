@@ -1,5 +1,10 @@
 # S&P 500 Fundamentals Research Pipeline
 
+[![CI](https://github.com/bernardoo-soares/fundamentals-research-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/bernardoo-soares/fundamentals-research-pipeline/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Data pipeline for building auditable S&P 500 fundamentals datasets from public and vendor-style sources.
 
 The project focuses on research infrastructure: universe construction, source ingestion, schema mapping,
