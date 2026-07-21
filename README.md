@@ -5,7 +5,7 @@ S&P 500 fundamentals pipeline with a simple layered `src/` layout.
 Current provider direction:
 - As of `2026-03-01`, SimFin is the agreed provider for fundamentals fetching in this phase.
 - The SEC pipeline remains in the repository as a legacy research path and audit reference, but it is not the production-recommended data source.
-- The current SimFin raw fundamentals implementation is cache-first: it reads from `data/raw/vendor/simfin_cache` when files are present and only falls back to the SimFin package loaders when cache files are missing.
+- The current SimFin raw fundamentals implementation is cache-first by default, with optional quarterly refresh and validated ticker aliasing for provider mismatches.
 
 ## Structure
 - `src/trading_bot/core`: settings, logging, exceptions
@@ -41,6 +41,7 @@ python -m trading_bot universe --as-of-date 2026-02-07
 python -m trading_bot legacy-fundamentals --start-date 2023-01-01 --end-date 2025-12-31
 python -m trading_bot legacy-raw-stage1 --raw-dir data/raw/Processed-Fundamentals --output-dir data/processed --reports-dir data/reports --start-year 2006 --end-year 2023
 python -m trading_bot simfin-raw-fundamentals --universe-path data/universe_current.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
+python -m trading_bot simfin-raw-fundamentals --universe-path data/universe_current.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025 --refresh-quarterly-cache --quarterly-refresh-days 0
 python -m trading_bot sec-map-cik --universe-path data/universe_current.csv --output-path data/reports/sec_cik_mapping.csv
 python -m trading_bot sec-ingest-raw --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/companyfacts --log-path data/reports/sec_ingestion_log.csv
 python -m trading_bot sec-ingest-submissions --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/submissions --log-path data/reports/sec_submissions_ingestion_log.csv
@@ -52,7 +53,7 @@ python -m trading_bot sec-build-processed --raw-dir data/raw/sec/companyfacts --
 Notes:
 - The SEC commands above remain callable because they still exist in code.
 - They are documented here as the current runtime surface, not as the recommended fundamentals provider path.
-- SimFin raw fundamentals uses the local cache first and loads missing datasets via the SimFin package when needed.
+- SimFin raw fundamentals uses the local cache first, can force-refresh quarterly datasets through SimFin, and applies a small validated alias map when universe tickers differ from SimFin provider tickers.
 
 Pipeline stages are currently executed command-by-command from the CLI.
 
@@ -73,6 +74,8 @@ Currently generated when the corresponding implemented CLI stage runs:
 - `data/reports/simfin_raw_missing_rows_2023_2025.csv`
 - `data/reports/simfin_raw_missing_fields_2023_2025.csv`
 - `data/reports/simfin_raw_family_conflicts_2023_2025.csv`
+- `data/reports/simfin_raw_unit_normalization_2023_2025.csv`
+- `data/reports/simfin_raw_alias_hits_2023_2025.csv`
 - `data/reports/sec_cik_mapping.csv`
 - `data/reports/sec_ingestion_log.csv`
 - `data/raw/sec/companyfacts/*.json`
@@ -92,6 +95,13 @@ stage.
 `simfin-raw-fundamentals` publishes the same raw fundamentals contract for
 `2023-2025`, using the field mapping policy in `specs/SIMFIN_STAGE1_MAPPING.md`
 and leaving unsupported fields explicitly null.
+Published raw fundamentals outputs use one shared scale across the full
+history:
+- monetary fields in `USD millions`
+- share-count fields in `millions of shares`
+- per-share fields unchanged
+SimFin-native base units are normalized to that published scale before the
+yearly CSVs are written.
 
 ## Tests
 ```powershell

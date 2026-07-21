@@ -4,6 +4,10 @@ import pytest
 
 from trading_bot.contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
+    MONETARY_RAW_FIELDS,
+    PER_SHARE_FIELDS,
+    PUBLISHED_UNIT_SCALE_NAME,
+    SHARE_COUNT_FIELDS,
     STAGE1_KEY_COLUMNS,
     STAGE1_OUTPUT_COLUMNS,
     SUPPORT_RAW_FIELDS,
@@ -47,3 +51,19 @@ def test_validate_stage1_frame_columns_rejects_wrong_leading_order() -> None:
     columns[:3] = ["year", "ticker", "quarter"]
     with pytest.raises(ValueError, match="must start with columns"):
         validate_stage1_frame_columns(columns)
+
+
+def test_all_published_raw_fields_have_exactly_one_unit_class() -> None:
+    classified = set(MONETARY_RAW_FIELDS + SHARE_COUNT_FIELDS + PER_SHARE_FIELDS)
+    raw_fields = set(CORE_RAW_FIELDS + SUPPORT_RAW_FIELDS)
+    assert classified == raw_fields
+    assert set(MONETARY_RAW_FIELDS).isdisjoint(SHARE_COUNT_FIELDS)
+    assert set(MONETARY_RAW_FIELDS).isdisjoint(PER_SHARE_FIELDS)
+    assert set(SHARE_COUNT_FIELDS).isdisjoint(PER_SHARE_FIELDS)
+
+
+def test_published_scale_uses_legacy_million_convention() -> None:
+    assert PUBLISHED_UNIT_SCALE_NAME == "legacy_millions_scale"
+    assert "saleq" in MONETARY_RAW_FIELDS
+    assert "cshfdq" in SHARE_COUNT_FIELDS
+    assert PER_SHARE_FIELDS == ("epspxq",)

@@ -96,11 +96,15 @@ class SimfinConnector:
         *,
         data_dir: str | Path | None = None,
         api_key: str | None = None,
+        refresh_quarterly: bool = False,
+        quarterly_refresh_days: int = 0,
         import_module: Callable[[], Any] | None = None,
     ) -> None:
         settings = get_settings()
         self.data_dir = Path(data_dir) if data_dir else settings.simfin_data_dir
         self.api_key = api_key if api_key is not None else settings.simfin_api_key
+        self.refresh_quarterly = refresh_quarterly
+        self.quarterly_refresh_days = quarterly_refresh_days
         self._import_module = import_module or self._default_import_module
 
     @staticmethod
@@ -137,7 +141,11 @@ class SimfinConnector:
 
         metadata = SIMFIN_DATASETS[dataset_name]
         dataset_path = self.data_dir / metadata["filename"]
-        if dataset_path.exists():
+        should_refresh = (
+            dataset_name in SIMFIN_QUARTERLY_DATASETS and self.refresh_quarterly
+        )
+
+        if dataset_path.exists() and not should_refresh:
             return self._read_cached_csv(dataset_path)
 
         module = self._import_module()
@@ -149,16 +157,22 @@ class SimfinConnector:
             )
 
         try:
-            frame = loader(variant=metadata["variant"], market="us")
+            loader_kwargs = {
+                "variant": metadata["variant"],
+                "market": "us",
+            }
+            if dataset_name in SIMFIN_QUARTERLY_DATASETS:
+                loader_kwargs["refresh_days"] = self.quarterly_refresh_days
+            frame = loader(**loader_kwargs)
         except Exception as exc:  # pragma: no cover - defensive wrapper
             raise DataSourceError(
                 f"SimFin dataset load failed for {dataset_name}."
             ) from exc
 
-        if dataset_path.exists():
-            return self._read_cached_csv(dataset_path)
         if isinstance(frame, pd.DataFrame):
             return frame.reset_index()
+        if dataset_path.exists():
+            return self._read_cached_csv(dataset_path)
 
         raise DataSourceError(
             f"SimFin dataset load for {dataset_name} returned no readable DataFrame."

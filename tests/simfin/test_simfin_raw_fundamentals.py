@@ -383,30 +383,35 @@ def test_build_simfin_raw_fundamentals_writes_yearly_outputs_and_reports(tmp_pat
     assert set(year_df["ticker"]) == {"AAPL", "ABCB"}
 
     aapl = year_df[year_df["ticker"] == "AAPL"].iloc[0]
-    assert aapl["saleq"] == 100.0
-    assert aapl["xintq"] == 5.0
-    assert aapl["actq"] == 80.0
-    assert aapl["lctq"] == 40.0
-    assert aapl["prstkcq"] == 7.0
-    assert aapl["capxq"] == 9.0
-    assert aapl["dvpq"] == 3.0
+    assert aapl["saleq"] == 0.0001
+    assert aapl["xintq"] == 0.000005
+    assert aapl["actq"] == 0.00008
+    assert aapl["lctq"] == 0.00004
+    assert aapl["prstkcq"] == 0.000007
+    assert aapl["capxq"] == 0.000009
+    assert aapl["dvpq"] == 0.000003
     assert aapl["epspxq"] == 2.0
-    assert aapl["oancfy"] == 120.0
-    assert aapl["capxy"] == 36.0
-    assert aapl["prstkcy"] == 28.0
+    assert aapl["oancfy"] == 0.00012
+    assert aapl["capxy"] == 0.000036
+    assert aapl["prstkcy"] == 0.000028
     assert pd.isna(aapl["cshopq"])
 
     abcb = year_df[year_df["ticker"] == "ABCB"].iloc[0]
     assert pd.isna(abcb["xintq"])
     assert pd.isna(abcb["actq"])
     assert pd.isna(abcb["lctq"])
-    assert abcb["ppentq"] == 500.0
-    assert abcb["ivltq"] == 600.0
-    assert abcb["prstkcq"] == 9.0
+    assert abcb["ppentq"] == 0.0005
+    assert abcb["ivltq"] == 0.0006
+    assert abcb["prstkcq"] == 0.000009
 
     coverage = pd.read_csv(artifacts["coverage_output"])
     assert coverage.loc[0, "rows_emitted"] == 2
     assert coverage.loc[0, "unique_tickers_emitted"] == 2
+
+    unit_report = pd.read_csv(artifacts["unit_normalization_output"])
+    saleq_report = unit_report[unit_report["field_name"] == "saleq"].iloc[0]
+    assert saleq_report["scale_divisor_applied"] == 1_000_000.0
+    assert saleq_report["source_system"] == "simfin"
 
     missing_universe = pd.read_csv(artifacts["missing_universe_output"])
     assert missing_universe.to_dict(orient="records") == [
@@ -437,6 +442,160 @@ def test_build_simfin_raw_fundamentals_writes_yearly_outputs_and_reports(tmp_pat
     )
 
 
+def test_build_simfin_raw_fundamentals_expands_validated_alias_tickers(tmp_path) -> None:
+    cache_dir = tmp_path / "simfin_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    _write_simfin_csv(
+        cache_dir / "us-income-quarterly.csv",
+        [
+            {
+                "Ticker": "GOOG",
+                "Fiscal Year": 2023,
+                "Fiscal Period": "Q1",
+                "Report Date": "2023-03-31",
+                "Publish Date": "2023-04-30",
+                "Restated Date": "2023-04-30",
+                "Shares (Basic)": 10.0,
+                "Shares (Diluted)": 11.0,
+                "Revenue": 100.0,
+                "Operating Income (Loss)": 30.0,
+                "Interest Expense, Net": 1.0,
+                "Income Tax (Expense) Benefit, Net": 4.0,
+                "Net Income": 20.0,
+                "Net Income (Common)": 20.0,
+            }
+        ],
+        [
+            "Ticker",
+            "Fiscal Year",
+            "Fiscal Period",
+            "Report Date",
+            "Publish Date",
+            "Restated Date",
+            "Shares (Basic)",
+            "Shares (Diluted)",
+            "Revenue",
+            "Operating Income (Loss)",
+            "Interest Expense, Net",
+            "Income Tax (Expense) Benefit, Net",
+            "Net Income",
+            "Net Income (Common)",
+        ],
+    )
+    _write_simfin_csv(
+        cache_dir / "us-balance-quarterly.csv",
+        [
+            {
+                "Ticker": "GOOG",
+                "Fiscal Year": 2023,
+                "Fiscal Period": "Q1",
+                "Report Date": "2023-03-31",
+                "Publish Date": "2023-04-30",
+                "Restated Date": "2023-04-30",
+                "Cash, Cash Equivalents & Short Term Investments": 50.0,
+                "Total Current Assets": 80.0,
+                "Property, Plant & Equipment, Net": 300.0,
+                "Long Term Investments & Receivables": 60.0,
+                "Total Assets": 500.0,
+                "Short Term Debt": 15.0,
+                "Total Current Liabilities": 40.0,
+                "Long Term Debt": 100.0,
+                "Treasury Stock": 8.0,
+                "Retained Earnings": 90.0,
+                "Total Equity": 200.0,
+                "Goodwill": 12.0,
+                "Shares (Basic)": 10.0,
+                "Shares (Diluted)": 11.0,
+            }
+        ],
+        [
+            "Ticker",
+            "Fiscal Year",
+            "Fiscal Period",
+            "Report Date",
+            "Publish Date",
+            "Restated Date",
+            "Cash, Cash Equivalents & Short Term Investments",
+            "Total Current Assets",
+            "Property, Plant & Equipment, Net",
+            "Long Term Investments & Receivables",
+            "Total Assets",
+            "Short Term Debt",
+            "Total Current Liabilities",
+            "Long Term Debt",
+            "Treasury Stock",
+            "Retained Earnings",
+            "Total Equity",
+            "Goodwill",
+            "Shares (Basic)",
+            "Shares (Diluted)",
+        ],
+    )
+    _write_simfin_csv(
+        cache_dir / "us-cashflow-quarterly.csv",
+        [
+            {
+                "Ticker": "GOOG",
+                "Fiscal Year": 2023,
+                "Fiscal Period": "Q1",
+                "Report Date": "2023-03-31",
+                "Publish Date": "2023-04-30",
+                "Restated Date": "2023-04-30",
+                "Net Cash from Operating Activities": 25.0,
+                "Change in Fixed Assets & Intangibles": -9.0,
+                "Dividends Paid": -3.0,
+                "Cash from (Repurchase of) Equity": -7.0,
+                "Shares (Basic)": 10.0,
+                "Shares (Diluted)": 11.0,
+            }
+        ],
+        [
+            "Ticker",
+            "Fiscal Year",
+            "Fiscal Period",
+            "Report Date",
+            "Publish Date",
+            "Restated Date",
+            "Net Cash from Operating Activities",
+            "Change in Fixed Assets & Intangibles",
+            "Dividends Paid",
+            "Cash from (Repurchase of) Equity",
+            "Shares (Basic)",
+            "Shares (Diluted)",
+        ],
+    )
+    _write_simfin_csv(cache_dir / "us-income-banks-quarterly.csv", [], ["Ticker", "Fiscal Year", "Fiscal Period"])
+    _write_simfin_csv(cache_dir / "us-balance-banks-quarterly.csv", [], ["Ticker", "Fiscal Year", "Fiscal Period"])
+    _write_simfin_csv(cache_dir / "us-cashflow-banks-quarterly.csv", [], ["Ticker", "Fiscal Year", "Fiscal Period"])
+    _write_simfin_csv(cache_dir / "us-income-insurance-quarterly.csv", [], ["Ticker", "Fiscal Year", "Fiscal Period"])
+    _write_simfin_csv(cache_dir / "us-balance-insurance-quarterly.csv", [], ["Ticker", "Fiscal Year", "Fiscal Period"])
+    _write_simfin_csv(cache_dir / "us-cashflow-insurance-quarterly.csv", [], ["Ticker", "Fiscal Year", "Fiscal Period"])
+    _write_simfin_csv(cache_dir / "us-cashflow-annual.csv", [], ["Ticker", "Fiscal Year"])
+    _write_simfin_csv(cache_dir / "us-cashflow-banks-annual.csv", [], ["Ticker", "Fiscal Year"])
+    _write_simfin_csv(cache_dir / "us-cashflow-insurance-annual.csv", [], ["Ticker", "Fiscal Year"])
+
+    universe_path = tmp_path / "universe.csv"
+    pd.DataFrame({"ticker": ["GOOG", "GOOGL"]}).to_csv(universe_path, index=False)
+
+    artifacts = build_simfin_raw_fundamentals(
+        universe_path=universe_path,
+        output_dir=tmp_path / "processed",
+        reports_dir=tmp_path / "reports",
+        start_year=2023,
+        end_year=2023,
+        connector=SimfinConnector(data_dir=cache_dir),
+    )
+
+    year_df = pd.read_csv(artifacts["processed_2023"])
+    assert set(year_df["ticker"]) == {"GOOG", "GOOGL"}
+
+    alias_report = pd.read_csv(artifacts["alias_output"])
+    googl = alias_report[alias_report["requested_ticker"] == "GOOGL"].iloc[0]
+    assert bool(googl["alias_applied"]) is True
+    assert googl["provider_ticker"] == "GOOG"
+    assert googl["rows_emitted"] == 1
+
+
 def test_cli_simfin_raw_fundamentals_invokes_pipeline(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 
@@ -463,6 +622,9 @@ def test_cli_simfin_raw_fundamentals_invokes_pipeline(monkeypatch, capsys) -> No
             "2023",
             "--end-year",
             "2025",
+            "--refresh-quarterly-cache",
+            "--quarterly-refresh-days",
+            "0",
         ],
     )
 
@@ -471,3 +633,5 @@ def test_cli_simfin_raw_fundamentals_invokes_pipeline(monkeypatch, capsys) -> No
     assert "processed_2023=data/processed/raw_fundamentals_2023.csv" in out
     assert captured["start_year"] == 2023
     assert captured["end_year"] == 2025
+    assert captured["refresh_quarterly"] is True
+    assert captured["quarterly_refresh_days"] == 0

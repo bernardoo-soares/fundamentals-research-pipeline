@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from ..connectors.simfin_dataset_loader import SimfinConnector
+from ..contracts.simfin_aliases import SIMFIN_TICKER_ALIASES
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     STAGE1_OUTPUT_COLUMNS,
@@ -14,6 +15,10 @@ from ..contracts.stage1_fundamentals_schema import (
     validate_stage1_frame_columns,
 )
 from ..core.settings import get_settings
+from .raw_fundamentals_unit_normalizer import (
+    build_unit_normalization_report,
+    normalize_raw_fundamentals_units,
+)
 
 
 SIMFIN_FIELDS: tuple[str, ...] = (*CORE_RAW_FIELDS, *SUPPORT_RAW_FIELDS)
@@ -33,6 +38,13 @@ SIMFIN_CONFLICT_COLUMNS: tuple[str, ...] = (
     "quarter",
     "source_family",
     "mapped_non_null_count",
+)
+SIMFIN_ALIAS_COLUMNS: tuple[str, ...] = (
+    "requested_ticker",
+    "provider_ticker",
+    "alias_applied",
+    "rows_emitted",
+    "years_present",
 )
 SIMFIN_FAMILY_PRIORITY: dict[str, int] = {
     "banks": 0,
@@ -86,6 +98,20 @@ def _load_universe_tickers(universe_path: str | Path) -> set[str]:
         for ticker in (_normalize_ticker(value) for value in df["ticker"].tolist())
         if ticker is not None
     }
+
+
+def _build_ticker_resolution_maps(
+    universe_tickers: set[str],
+) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Build requested-to-provider and provider-to-requested ticker maps."""
+    requested_to_provider = {
+        ticker: SIMFIN_TICKER_ALIASES.get(ticker, ticker)
+        for ticker in sorted(universe_tickers)
+    }
+    provider_to_requested: dict[str, list[str]] = {}
+    for requested_ticker, provider_ticker in requested_to_provider.items():
+        provider_to_requested.setdefault(provider_ticker, []).append(requested_ticker)
+    return requested_to_provider, provider_to_requested
 
 
 def _normalize_quarterly_frame(
@@ -490,6 +516,56 @@ def _build_missing_fields_report(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=SIMFIN_MISSING_FIELD_COLUMNS)
 
 
+def _expand_requested_ticker_rows(
+    frame: pd.DataFrame,
+    *,
+    provider_to_requested: dict[str, list[str]],
+) -> pd.DataFrame:
+    """Duplicate provider rows so output stays keyed by requested universe ticker."""
+    if frame.empty:
+        return frame.copy()
+
+    expanded_rows: list[dict[str, object]] = []
+    for row in frame.to_dict(orient="records"):
+        provider_ticker = str(row["ticker"]).upper()
+        requested_tickers = provider_to_requested.get(provider_ticker, [provider_ticker])
+        for requested_ticker in requested_tickers:
+            expanded = dict(row)
+            expanded["ticker"] = requested_ticker
+            expanded_rows.append(expanded)
+    return pd.DataFrame(expanded_rows, columns=frame.columns)
+
+
+def _build_alias_report(
+    frame: pd.DataFrame,
+    *,
+    requested_to_provider: dict[str, str],
+) -> pd.DataFrame:
+    """Build a report showing which universe tickers used a provider alias."""
+    rows: list[dict[str, object]] = []
+    for requested_ticker, provider_ticker in sorted(requested_to_provider.items()):
+        alias_applied = requested_ticker != provider_ticker
+        if frame.empty:
+            ticker_rows = pd.DataFrame(columns=["year"])
+        else:
+            ticker_rows = frame[frame["ticker"] == requested_ticker]
+        years_present = (
+            "|".join(str(year) for year in sorted(ticker_rows["year"].dropna().astype(int).unique().tolist()))
+            if not ticker_rows.empty
+            else ""
+        )
+        rows.append(
+            {
+                "requested_ticker": requested_ticker,
+                "provider_ticker": provider_ticker,
+                "alias_applied": alias_applied,
+                "rows_emitted": int(len(ticker_rows)),
+                "years_present": years_present,
+            }
+        )
+    return pd.DataFrame(rows, columns=SIMFIN_ALIAS_COLUMNS)
+
+
 def build_simfin_raw_fundamentals(
     *,
     universe_path: str | Path = "data/universe_current.csv",
@@ -497,6 +573,8 @@ def build_simfin_raw_fundamentals(
     reports_dir: str | Path | None = None,
     start_year: int = 2023,
     end_year: int = 2025,
+    refresh_quarterly: bool = False,
+    quarterly_refresh_days: int = 0,
     connector: SimfinConnector | None = None,
 ) -> dict[str, str]:
     """Build yearly raw fundamentals CSVs for a universe using SimFin data."""
@@ -505,13 +583,20 @@ def build_simfin_raw_fundamentals(
 
     settings = get_settings()
     universe_tickers = _load_universe_tickers(universe_path)
+    requested_to_provider, provider_to_requested = _build_ticker_resolution_maps(
+        universe_tickers
+    )
+    provider_tickers = set(provider_to_requested)
     resolved_output_dir = Path(output_dir) if output_dir else settings.processed_data_dir
     resolved_reports_dir = Path(reports_dir) if reports_dir else settings.reports_data_dir
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     resolved_reports_dir.mkdir(parents=True, exist_ok=True)
 
     if connector is None:
-        connector = SimfinConnector()
+        connector = SimfinConnector(
+            refresh_quarterly=refresh_quarterly,
+            quarterly_refresh_days=quarterly_refresh_days,
+        )
 
     bundle = connector.load_raw_fundamentals_datasets()
 
@@ -520,7 +605,7 @@ def build_simfin_raw_fundamentals(
         normalized_frames = [
             _normalize_quarterly_frame(
                 bundle[dataset_name],
-                tickers=universe_tickers,
+                tickers=provider_tickers,
                 start_year=start_year,
                 end_year=end_year,
             )
@@ -528,7 +613,7 @@ def build_simfin_raw_fundamentals(
         ]
         annual_frame = _normalize_annual_frame(
             bundle[SIMFIN_ANNUAL_CASHFLOW_FAMILY_DATASETS[family]],
-            tickers=universe_tickers,
+            tickers=provider_tickers,
             start_year=start_year,
             end_year=end_year,
         )
@@ -544,18 +629,28 @@ def build_simfin_raw_fundamentals(
     else:
         candidates = pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"])
     selected, conflicts = _select_best_family_rows(candidates)
+    selected = _expand_requested_ticker_rows(
+        selected,
+        provider_to_requested=provider_to_requested,
+    )
     selected = selected.sort_values(["ticker", "year", "quarter"], kind="mergesort").reset_index(drop=True)
-    validate_stage1_frame_columns(selected.columns[: len(STAGE1_OUTPUT_COLUMNS)].tolist())
+    normalized_selected = normalize_raw_fundamentals_units(
+        selected,
+        source_system="simfin",
+    )
+    validate_stage1_frame_columns(
+        normalized_selected.columns[: len(STAGE1_OUTPUT_COLUMNS)].tolist()
+    )
 
     year_outputs = _write_year_partitions(
-        selected[list(STAGE1_OUTPUT_COLUMNS)],
+        normalized_selected[list(STAGE1_OUTPUT_COLUMNS)],
         output_dir=resolved_output_dir,
         start_year=start_year,
         end_year=end_year,
     )
 
     coverage = _build_coverage(
-        selected,
+        normalized_selected,
         universe_tickers=universe_tickers,
         start_year=start_year,
         end_year=end_year,
@@ -564,7 +659,7 @@ def build_simfin_raw_fundamentals(
     coverage.to_csv(coverage_output, index=False)
 
     missing_universe = _build_missing_universe_report(
-        selected,
+        normalized_selected,
         universe_tickers=universe_tickers,
     )
     missing_universe_output = (
@@ -573,7 +668,7 @@ def build_simfin_raw_fundamentals(
     missing_universe.to_csv(missing_universe_output, index=False)
 
     missing_rows = _build_missing_rows_report(
-        selected,
+        normalized_selected,
         universe_tickers=universe_tickers,
         start_year=start_year,
         end_year=end_year,
@@ -583,7 +678,7 @@ def build_simfin_raw_fundamentals(
     )
     missing_rows.to_csv(missing_rows_output, index=False)
 
-    missing_fields = _build_missing_fields_report(selected)
+    missing_fields = _build_missing_fields_report(normalized_selected)
     missing_fields_output = (
         resolved_reports_dir / f"simfin_raw_missing_fields_{start_year}_{end_year}.csv"
     )
@@ -594,12 +689,29 @@ def build_simfin_raw_fundamentals(
     )
     conflicts.to_csv(conflicts_output, index=False)
 
+    alias_report = _build_alias_report(
+        normalized_selected,
+        requested_to_provider=requested_to_provider,
+    )
+    alias_output = resolved_reports_dir / f"simfin_raw_alias_hits_{start_year}_{end_year}.csv"
+    alias_report.to_csv(alias_output, index=False)
+
+    unit_report = build_unit_normalization_report(
+        selected,
+        normalized_selected,
+        source_system="simfin",
+    )
+    unit_output = resolved_reports_dir / f"simfin_raw_unit_normalization_{start_year}_{end_year}.csv"
+    unit_report.to_csv(unit_output, index=False)
+
     artifacts = {
         "coverage_output": str(coverage_output),
         "missing_universe_output": str(missing_universe_output),
         "missing_rows_output": str(missing_rows_output),
         "missing_fields_output": str(missing_fields_output),
         "family_conflicts_output": str(conflicts_output),
+        "alias_output": str(alias_output),
+        "unit_normalization_output": str(unit_output),
     }
     artifacts.update(year_outputs)
     return artifacts

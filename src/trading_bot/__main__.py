@@ -124,6 +124,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     simfin_raw_parser.add_argument("--start-year", type=int, default=2023)
     simfin_raw_parser.add_argument("--end-year", type=int, default=2025)
+    simfin_raw_parser.add_argument(
+        "--refresh-quarterly-cache",
+        action="store_true",
+        help="Refresh SimFin quarterly datasets through the provider even if cache files exist.",
+    )
+    simfin_raw_parser.add_argument(
+        "--quarterly-refresh-days",
+        type=int,
+        default=0,
+        help="Value passed to SimFin refresh_days for quarterly datasets when refresh is enabled. Use 0 to force refresh.",
+    )
 
     legacy_audit_parser = subparsers.add_parser(
         "legacy-stage1-audit",
@@ -369,12 +380,15 @@ def main() -> None:
     if args.command == "simfin-raw-fundamentals":
         LOG.info(
             "Running SimFin raw fundamentals build: universe_path=%s output_dir=%s "
-            "reports_dir=%s start_year=%d end_year=%d",
+            "reports_dir=%s start_year=%d end_year=%d refresh_quarterly=%s "
+            "quarterly_refresh_days=%d",
             args.universe_path,
             args.output_dir,
             args.reports_dir,
             args.start_year,
             args.end_year,
+            args.refresh_quarterly_cache,
+            args.quarterly_refresh_days,
         )
         artifacts = build_simfin_raw_fundamentals(
             universe_path=args.universe_path,
@@ -382,6 +396,8 @@ def main() -> None:
             reports_dir=args.reports_dir,
             start_year=args.start_year,
             end_year=args.end_year,
+            refresh_quarterly=args.refresh_quarterly_cache,
+            quarterly_refresh_days=args.quarterly_refresh_days,
         )
         LOG.info("SimFin raw fundamentals build completed: %s", artifacts)
         for key, value in artifacts.items():

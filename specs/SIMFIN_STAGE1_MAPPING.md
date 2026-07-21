@@ -19,6 +19,14 @@ builder. It is based on the actual cached headers currently present under:
 - `data/raw/vendor/simfin_cache/us-balance-insurance-quarterly.csv`
 - `data/raw/vendor/simfin_cache/us-cashflow-insurance-quarterly.csv`
 
+Published-output scale note:
+1. cached SimFin values arrive in base `USD` and `shares`
+2. the published yearly raw fundamentals files use the legacy-compatible scale:
+   - monetary fields in `USD millions`
+   - share-count fields in `millions of shares`
+3. therefore the SimFin builder must apply a unit-normalization pass before
+   writing `raw_fundamentals_<year>.csv`
+
 ## Classification Legend
 1. `direct`
    - Exact or near-exact semantic match from a single SimFin column.

@@ -21,8 +21,9 @@ Current plan:
 1. Use already computed local historical data for `2006-2023` when building the local raw Stage 1 artifacts.
 2. Use SimFin API for `2023-2025` inclusive.
 3. Normalize both source paths into one canonical quarterly schema.
-4. Emit one yearly CSV per year.
-5. Explicitly document missing rows, missing fields, and unresolved source issues so dataset quality can be improved over time.
+4. Apply a mandatory unit-normalization pass to the canonical raw fields before publish.
+5. Emit one yearly CSV per year.
+6. Explicitly document missing rows, missing fields, and unresolved source issues so dataset quality can be improved over time.
 
 Expected outcome:
 - A consistent yearly fundamentals dataset that can be consumed without caring which source produced the row.
@@ -89,30 +90,34 @@ Stage 2 then appends computed metrics columns.
 2. Load historical normalized-compatible raw fundamentals for `2006-2023`.
 3. Fetch fundamentals for `2023-2025` from SimFin.
 4. Map both paths into the same canonical quarterly schema.
-5. Write yearly normalized fundamentals CSVs.
-6. Compute derived fundamentals ratios from canonical raw fields.
-7. Write yearly ratios/features CSVs.
-8. Emit explicit QA artifacts describing failures, nulls, and unresolved coverage issues.
-9. Later, consume the ratios/features layer for scoring and ranking.
+5. Normalize canonical raw values to one published scale across providers.
+6. Write yearly normalized fundamentals CSVs.
+7. Compute derived fundamentals ratios from canonical raw fields.
+8. Write yearly ratios/features CSVs.
+9. Emit explicit QA artifacts describing failures, nulls, and unresolved coverage issues.
+10. Later, consume the ratios/features layer for scoring and ranking.
 
 ## Architectural Principles
 1. Canonical-first:
    - all source paths must land in the same normalized schema before any ratios are computed.
-2. Raw before derived:
+2. Unit-consistent publish layer:
+   - provider-native units must not leak into the published yearly raw fundamentals files;
+   - the published raw layer uses one shared scale across provider windows.
+3. Raw before derived:
    - Stage 1 stores raw canonical fundamentals;
    - Stage 2 computes derived metrics from Stage 1 only.
-3. Auditability:
+4. Auditability:
    - each row should remain traceable to its source path, year, and transformation stage.
-4. Deterministic keys:
+5. Deterministic keys:
    - quarterly records should use stable keys centered on `ticker`, `year`, and `quarter`.
-5. Explicit source windows:
+6. Explicit source windows:
    - local historical raw files are an implemented path for `2006-2023`;
    - SimFin is the intended path for `2023-2025`.
-6. Yearly outputs:
+7. Yearly outputs:
    - output artifacts are organized as one CSV per year per stage.
-7. Stable ordering:
+8. Stable ordering:
    - yearly CSVs should be sorted by `ticker`, then `year`, then `quarter`.
-8. Explicit failure reporting:
+9. Explicit failure reporting:
    - the pipeline should document which tickers, rows, and fields are missing or failing so coverage can be improved deliberately.
 
 ## Data Zones
@@ -152,6 +157,7 @@ Stage 2 then appends computed metrics columns.
    - `data/reports/simfin_raw_missing_rows_2023_2025.csv`
    - `data/reports/simfin_raw_missing_fields_2023_2025.csv`
    - `data/reports/simfin_raw_family_conflicts_2023_2025.csv`
+   - `data/reports/simfin_raw_unit_normalization_2023_2025.csv`
 
 ### Stage 2 Outputs
 1. yearly computed ratios/features CSVs for `2006-2025`
