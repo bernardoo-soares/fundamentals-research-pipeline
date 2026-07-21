@@ -4,7 +4,7 @@ This module intentionally stays minimal and exposes only the package version so
 other modules and tooling can report reproducible build/runtime information.
 """
 
-# Exported symbols for `from trading_bot import *` use cases.
+# Exported symbols for `from fundamentals_pipeline import *` use cases.
 __all__ = ["__version__"]
 
 # Semantic version for the installed package.

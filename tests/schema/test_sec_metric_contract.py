@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from trading_bot.contracts.sec_metric_mapping_schema import (
+from fundamentals_pipeline.contracts.sec_metric_mapping_schema import (
     ALLOWED_FORMS,
     COMPUTE_ONLY_FIELDS,
     FETCH_ONLY_RAW_FIELDS,
@@ -15,7 +15,7 @@ from trading_bot.contracts.sec_metric_mapping_schema import (
 
 
 def test_mapping_contract_file_exists() -> None:
-    path = Path("src/trading_bot/contracts/sec_metric_mapping.yml")
+    path = Path("src/fundamentals_pipeline/contracts/sec_metric_mapping.yml")
     assert path.exists(), "Expected sec metric mapping file to exist."
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from trading_bot.contracts.legacy_stage1_audit_schema import (
+from fundamentals_pipeline.contracts.legacy_stage1_audit_schema import (
     REPORT_COLUMNS,
     validate_report_columns,
 )

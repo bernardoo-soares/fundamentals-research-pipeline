@@ -36,7 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     settings = get_settings()
     parser = argparse.ArgumentParser(
-        prog="trading-bot",
+        prog="fundamentals-pipeline",
         description="S&P 500 universe and legacy fundamentals pipeline.",
     )
     parser.add_argument(
@@ -224,7 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sec_norm_parser.add_argument(
         "--mapping-path",
-        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_mapping.yml"),
+        default=str(Path("src") / "fundamentals_pipeline" / "contracts" / "sec_metric_mapping.yml"),
     )
     sec_norm_parser.add_argument(
         "--output-path",
@@ -246,7 +246,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sec_processed_parser.add_argument(
         "--mapping-path",
-        default=str(Path("src") / "trading_bot" / "contracts" / "sec_metric_mapping.yml"),
+        default=str(Path("src") / "fundamentals_pipeline" / "contracts" / "sec_metric_mapping.yml"),
     )
     sec_processed_parser.add_argument(
         "--fiscal-calendar-path",
