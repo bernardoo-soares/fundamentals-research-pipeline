@@ -32,10 +32,10 @@ External sources
 
 Main modules:
 
-- `src/trading_bot/connectors`: source adapters for Wikipedia, SEC, and SimFin-style datasets.
-- `src/trading_bot/contracts`: canonical schemas and mapping contracts.
-- `src/trading_bot/steps`: runnable pipeline stages that produce artifacts.
-- `src/trading_bot/workflows`: higher-level orchestration helpers.
+- `src/fundamentals_pipeline/connectors`: source adapters for Wikipedia, SEC, and SimFin-style datasets.
+- `src/fundamentals_pipeline/contracts`: canonical schemas and mapping contracts.
+- `src/fundamentals_pipeline/steps`: runnable pipeline stages that produce artifacts.
+- `src/fundamentals_pipeline/workflows`: higher-level orchestration helpers.
 - `specs`: design notes for the canonical schema, architecture, and SimFin mapping policy.
 - `tests`: unit and integration-style tests using local fixtures/fakes where possible.
 
@@ -54,13 +54,13 @@ Create `.env` from `.env.example` if you need to override default paths or provi
 Build the current S&P 500 universe:
 
 ```powershell
-python -m trading_bot universe --as-of-date 2026-02-07
+python -m fundamentals_pipeline universe --as-of-date 2026-02-07
 ```
 
 Build raw fundamentals from the SimFin path:
 
 ```powershell
-python -m trading_bot simfin-raw-fundamentals `
+python -m fundamentals_pipeline simfin-raw-fundamentals `
   --universe-path data/universe_current.csv `
   --output-dir data/processed `
   --reports-dir data/reports `
@@ -71,7 +71,7 @@ python -m trading_bot simfin-raw-fundamentals `
 Audit legacy Stage 1 outputs:
 
 ```powershell
-python -m trading_bot legacy-stage1-audit `
+python -m fundamentals_pipeline legacy-stage1-audit `
   --universe-path data/universe_current.csv `
   --raw-dir data/raw/Processed-Fundamentals `
   --processed-dir data/processed `
@@ -83,7 +83,7 @@ python -m trading_bot legacy-stage1-audit `
 See all CLI commands:
 
 ```powershell
-python -m trading_bot --help
+python -m fundamentals_pipeline --help
 ```
 
 ## Outputs

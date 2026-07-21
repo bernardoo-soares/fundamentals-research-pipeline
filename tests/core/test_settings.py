@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from trading_bot.core.settings import get_settings
+from fundamentals_pipeline.core.settings import get_settings
 
 
 def test_get_settings_loads_simfin_api_key_from_dotenv(tmp_path, monkeypatch) -> None:

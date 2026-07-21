@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from trading_bot import __main__ as cli
+from fundamentals_pipeline import __main__ as cli
 
 
 def test_cli_legacy_stage1_audit_invokes_runner(monkeypatch, capsys) -> None:
@@ -16,7 +16,7 @@ def test_cli_legacy_stage1_audit_invokes_runner(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "sys.argv",
         [
-            "trading-bot",
+            "fundamentals-pipeline",
             "legacy-stage1-audit",
             "--start-year",
             "2006",

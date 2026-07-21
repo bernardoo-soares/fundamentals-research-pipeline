@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
-from trading_bot.steps.legacy_stage1_output_audit import (
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.steps.legacy_stage1_output_audit import (
     build_field_nulls_report,
     build_review_sample,
     check_stage1_columns,

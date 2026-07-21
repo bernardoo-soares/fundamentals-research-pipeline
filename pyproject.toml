@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "trading-bot"
+name = "fundamentals-pipeline"
 version = "0.2.0"
 description = "S&P 500 fundamentals research pipeline"
 readme = "README.md"
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-trading-bot = "trading_bot.__main__:main"
+fundamentals-pipeline = "fundamentals_pipeline.__main__:main"
 
 [project.optional-dependencies]
 dev = [
