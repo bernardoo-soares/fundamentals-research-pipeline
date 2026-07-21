@@ -10,6 +10,7 @@ from ..connectors.simfin_dataset_loader import SimfinConnector
 from ..contracts.simfin_aliases import SIMFIN_TICKER_ALIASES
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
+    EXTENDED_RAW_FIELDS,
     STAGE1_OUTPUT_COLUMNS,
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
@@ -21,7 +22,11 @@ from .raw_fundamentals_unit_normalizer import (
 )
 
 
-SIMFIN_FIELDS: tuple[str, ...] = (*CORE_RAW_FIELDS, *SUPPORT_RAW_FIELDS)
+SIMFIN_FIELDS: tuple[str, ...] = (
+    *CORE_RAW_FIELDS,
+    *SUPPORT_RAW_FIELDS,
+    *EXTENDED_RAW_FIELDS,
+)
 SIMFIN_MISSING_COLUMNS: tuple[str, ...] = ("ticker", "reason")
 SIMFIN_MISSING_ROW_COLUMNS: tuple[str, ...] = ("ticker", "year", "quarter", "reason")
 SIMFIN_MISSING_FIELD_COLUMNS: tuple[str, ...] = (
@@ -361,6 +366,13 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["capxy"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles__annual")
     out["prstkcy"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity__annual")
     out["cshopq"] = _empty_numeric_series(frame)
+    out["cogsq"] = _empty_numeric_series(frame)
+    out["xsgaq"] = _empty_numeric_series(frame)
+    out["xrdq"] = _empty_numeric_series(frame)
+    out["dpq"] = _empty_numeric_series(frame)
+    out["ltq"] = _empty_numeric_series(frame)
+    out["invtq"] = _empty_numeric_series(frame)
+    out["rectq"] = _empty_numeric_series(frame)
     out["source_family"] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)
     return out[[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"]]

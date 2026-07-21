@@ -57,6 +57,13 @@ def _legacy_row(
         "cshfdq": cshfdq,
         "cshopq": cshopq,
         "cshoq": cshoq,
+        "cogsq": 60.0,
+        "xsgaq": 12.0,
+        "xrdq": 8.0,
+        "dpq": 11.0,
+        "ltq": 300.0,
+        "invtq": 30.0,
+        "rectq": 22.0,
     }
 
 
@@ -137,6 +144,15 @@ def test_build_legacy_raw_stage1_writes_yearly_raw_only_outputs_and_reports(tmp_
     assert tuple(year_df.columns) == STAGE1_OUTPUT_COLUMNS
     assert len(year_df) == 4
     assert "Operating_Margin" not in year_df.columns
+
+    first_row = year_df.iloc[0]
+    assert first_row["cogsq"] == 60.0
+    assert first_row["xsgaq"] == 12.0
+    assert first_row["xrdq"] == 8.0
+    assert first_row["dpq"] == 11.0
+    assert first_row["ltq"] == 300.0
+    assert first_row["invtq"] == 30.0
+    assert first_row["rectq"] == 22.0
 
     coverage = pd.read_csv(artifacts["coverage_output"])
     assert coverage.loc[0, "rows_emitted"] == 4

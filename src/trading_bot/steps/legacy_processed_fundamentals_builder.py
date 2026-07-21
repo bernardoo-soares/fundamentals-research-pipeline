@@ -15,13 +15,18 @@ import pandas as pd
 
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
+    EXTENDED_RAW_FIELDS,
     STAGE1_OUTPUT_COLUMNS,
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
 )
 from ..core.settings import get_settings
 
-LEGACY_STAGE1_FIELDS: tuple[str, ...] = (*CORE_RAW_FIELDS, *SUPPORT_RAW_FIELDS)
+LEGACY_STAGE1_FIELDS: tuple[str, ...] = (
+    *CORE_RAW_FIELDS,
+    *SUPPORT_RAW_FIELDS,
+    *EXTENDED_RAW_FIELDS,
+)
 LEGACY_TICKER_ALIASES: dict[str, tuple[str, ...]] = {
     "GOOG": ("GOOG", "GOOGL"),
     "GOOGL": ("GOOGL", "GOOG"),

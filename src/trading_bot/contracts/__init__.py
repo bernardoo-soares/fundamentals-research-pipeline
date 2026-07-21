@@ -2,6 +2,7 @@
 
 from .stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
+    EXTENDED_RAW_FIELDS,
     MONETARY_RAW_FIELDS,
     PER_SHARE_FIELDS,
     PUBLISHED_UNIT_SCALE_NAME,
@@ -39,6 +40,7 @@ from .sec_metric_mapping_schema import (
 __all__ = [
     "CORE_RAW_FIELDS",
     "COMPUTE_ONLY_FIELDS",
+    "EXTENDED_RAW_FIELDS",
     "FETCH_ONLY_RAW_FIELDS",
     "FIELD_NULLS_COLUMNS",
     "HELPER_FALLBACK_FIELDS",
