@@ -31,12 +31,14 @@ data
 #data/reports/
 
 # Local agent/runtime metadata
+.agent/
 .agents/
-.agent/*
-!.agent/plans/
-!.agent/plans/**
+AGENTS.md
+AGENTS.override.md
+**/AGENTS.md
+**/AGENTS.override.md
 
-# resumes and plans folder
-#resumes/
+# Local planning notes
+resumes/
 plans/
 

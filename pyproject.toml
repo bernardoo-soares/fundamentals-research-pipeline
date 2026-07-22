@@ -3,24 +3,26 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "trading-bot"
+name = "fundamentals-pipeline"
 version = "0.2.0"
-description = "S&P 500 universe and legacy fundamentals processing pipeline"
+description = "S&P 500 fundamentals research pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pandas>=2.0",
   "pyarrow>=14.0",
+  "pyyaml>=6.0",
   "requests>=2.31",
   "simfin>=1.0",
 ]
 
 [project.scripts]
-trading-bot = "trading_bot.__main__:main"
+fundamentals-pipeline = "fundamentals_pipeline.__main__:main"
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "ruff>=0.8.0",
 ]
 
 [tool.setuptools]
@@ -33,3 +35,10 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

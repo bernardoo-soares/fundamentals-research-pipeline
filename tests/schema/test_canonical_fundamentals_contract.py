@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from trading_bot.contracts.stage1_fundamentals_schema import (
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
     MONETARY_RAW_FIELDS,

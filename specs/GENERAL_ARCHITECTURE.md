@@ -158,6 +158,9 @@ Stage 2 then appends computed metrics columns.
    - `data/reports/simfin_raw_missing_fields_2023_2025.csv`
    - `data/reports/simfin_raw_family_conflicts_2023_2025.csv`
    - `data/reports/simfin_raw_unit_normalization_2023_2025.csv`
+   - `data/reports/simfin_raw_alias_hits_2023_2025.csv`
+6. implemented Stage 1 extension coverage audit artifact:
+   - `data/reports/stage1_extension_coverage_<start>_<end>.csv`
 
 ### Stage 2 Outputs
 1. yearly computed ratios/features CSVs for `2006-2025`

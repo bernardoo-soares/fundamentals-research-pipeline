@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot import __main__ as cli
-from trading_bot.connectors.simfin_dataset_loader import SimfinConnector
-from trading_bot.steps.simfin_raw_fundamentals_builder import (
+from fundamentals_pipeline import __main__ as cli
+from fundamentals_pipeline.connectors.simfin_dataset_loader import SimfinConnector
+from fundamentals_pipeline.steps.simfin_raw_fundamentals_builder import (
     build_simfin_raw_fundamentals,
 )
 
@@ -669,7 +669,7 @@ def test_cli_simfin_raw_fundamentals_invokes_pipeline(monkeypatch, capsys) -> No
     monkeypatch.setattr(
         "sys.argv",
         [
-            "trading-bot",
+            "fundamentals-pipeline",
             "simfin-raw-fundamentals",
             "--universe-path",
             "data/universe_current.csv",

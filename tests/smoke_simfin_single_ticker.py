@@ -4,9 +4,9 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 
@@ -381,7 +381,28 @@ def main() -> int:
     print(f"quarterly_csv={quarterly_path}")
     print(f"audit_csv={audit_path}")
     print(f"summary_json={summary_path}")
-    print(out[["ticker", "fiscal_year", "fiscal_period", "report_date", "saleq", "niq", "actq", "lctq", "atq", "ceqq", "oancfq", "capxq", "operating_margin", "net_margin", "current_ratio", "debt_to_equity", "roa", "roe", "free_cash_flow"]].to_string(index=False))
+    display_columns = [
+        "ticker",
+        "fiscal_year",
+        "fiscal_period",
+        "report_date",
+        "saleq",
+        "niq",
+        "actq",
+        "lctq",
+        "atq",
+        "ceqq",
+        "oancfq",
+        "capxq",
+        "operating_margin",
+        "net_margin",
+        "current_ratio",
+        "debt_to_equity",
+        "roa",
+        "roe",
+        "free_cash_flow",
+    ]
+    print(out[display_columns].to_string(index=False))
     return 0
 
 

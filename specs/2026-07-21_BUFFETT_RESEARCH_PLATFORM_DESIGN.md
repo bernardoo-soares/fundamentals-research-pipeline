@@ -53,7 +53,7 @@ This project informs real investment decisions. Every displayed number must be:
 |---|---|---|---|
 | D1 | Analytical storage | **DuckDB + Parquet** (`data/warehouse/`) | Single-file analytical DB; SQL window functions for trend metrics; matches 2026-03-15 direction. CSVs remain the raw audit/publish layer. |
 | D2 | UI stack | **Streamlit** | Python-native, same venv/repo, fastest iteration; UI is a read-only viewer so polish ceiling is acceptable. |
-| D3 | Refresh trigger | **Windows Task Scheduler → `trading-bot refresh` CLI** | OS-native, runs unattended, logs + diff reports; catches up after missed runs. |
+| D3 | Refresh trigger | **Windows Task Scheduler → `fundamentals-pipeline refresh` CLI** | OS-native, runs unattended, logs + diff reports; catches up after missed runs. |
 | D4 | Scoring style | **Graded ramps + literal book checklist, side by side** | Smooth 0–100 scoring anchored on book thresholds avoids cliff effects; the literal pass/fail checklist is always shown too. |
 | D5 | Financials (banks/insurance) | **Score applicable subset, renormalize weights, show coverage badge** | ~90 S&P names; GM/current-ratio/interest tests are meaningless for them; sector scorecards deferred. |
 | D6 | Market prices | **In v1** (Stooq EOD, no API key) | Enables P/E, earnings yield, and portfolio-vs-benchmark comparison. |
@@ -120,7 +120,7 @@ superseding the earlier 60-ticker random-sample estimate (3,325 rows,
 ### 4.1 Repository layout (additions marked +)
 
 ```
-src/trading_bot/
+src/fundamentals_pipeline/
   contracts/    (+) stage2_metrics_schema.py   # metric registry: ids, formulas, versions
                 (+) scorecard_schema.py         # score/checklist row contracts
                 (+) price_schema.py             # price series contract
@@ -151,7 +151,7 @@ DuckDB ──SELECT only──▶ Streamlit UI
 
 Rules:
 1. CSVs remain the raw source of truth; DuckDB is **rebuildable from scratch**
-   at any time via `trading-bot warehouse-rebuild`. Corruption is never fatal.
+   at any time via `fundamentals-pipeline warehouse-rebuild`. Corruption is never fatal.
 2. No layer reads forward (metrics never read scores; UI computes nothing).
 3. Every warehouse row carries `computed_at`, `pipeline_version`; metric rows
    carry `metric_version`; score rows carry `scorer_name`, `scorer_version`,
@@ -496,7 +496,7 @@ Clicking any score opens its full anatomy; **every number is a door**:
 
 ## 10. Monthly Refresh Job (part of sub-project 6)
 
-`trading-bot refresh` — one idempotent CLI command:
+`fundamentals-pipeline refresh` — one idempotent CLI command:
 
 ```
 1. SimFin re-pull (quarterly + annual, refresh_days policy)
@@ -523,10 +523,10 @@ Clicking any score opens its full anatomy; **every number is a door**:
 
 Scheduling: Windows Task Scheduler, monthly, "run as soon as possible after a
 missed start" enabled. Registration is scripted:
-`trading-bot install-refresh-task` emits/registers the scheduled task
+`fundamentals-pipeline install-refresh-task` emits/registers the scheduled task
 (PowerShell `Register-ScheduledTask`) so setup is reproducible.
 
-Manual invocation is identical (`trading-bot refresh`), satisfying "run it
+Manual invocation is identical (`fundamentals-pipeline refresh`), satisfying "run it
 whenever I want" with zero drift between manual and scheduled behavior.
 
 ---
@@ -589,7 +589,7 @@ quality gate green before merge, docs updated in the same change.
 
 ## 14. Acceptance Criteria (v1 complete when)
 
-1. `trading-bot refresh` runs end-to-end on this machine, green gates, and a
+1. `fundamentals-pipeline refresh` runs end-to-end on this machine, green gates, and a
    scheduled task exists.
 2. UI shows a full ranking with badges; every score drills down to
    criterion → formula → raw inputs → fiscal periods.

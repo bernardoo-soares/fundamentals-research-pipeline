@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot.steps.raw_fundamentals_unit_normalizer import (
+from fundamentals_pipeline.steps.raw_fundamentals_unit_normalizer import (
     UNIT_NORMALIZATION_REPORT_COLUMNS,
     build_unit_normalization_report,
     normalize_raw_fundamentals_units,

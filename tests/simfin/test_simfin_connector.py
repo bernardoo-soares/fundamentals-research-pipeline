@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from trading_bot.connectors.simfin_dataset_loader import SimfinConnector
-from trading_bot.core.exceptions import ConfigurationError
+from fundamentals_pipeline.connectors.simfin_dataset_loader import SimfinConnector
+from fundamentals_pipeline.core.exceptions import ConfigurationError
 
 
 def test_simfin_connector_reads_cached_csv_without_importing_package(tmp_path) -> None:

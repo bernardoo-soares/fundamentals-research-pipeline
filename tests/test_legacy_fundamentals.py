@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot import __main__ as cli
-from trading_bot.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
-from trading_bot.steps.legacy_processed_fundamentals_builder import (
+from fundamentals_pipeline import __main__ as cli
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.steps.legacy_processed_fundamentals_builder import (
     build_legacy_fundamentals,
     build_legacy_raw_stage1,
 )
-from trading_bot.workflows.full_run import run_legacy_raw_stage1_window
+from fundamentals_pipeline.workflows.full_run import run_legacy_raw_stage1_window
 
 
 def _legacy_row(
@@ -321,7 +321,7 @@ def test_cli_legacy_raw_stage1_invokes_pipeline(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "sys.argv",
         [
-            "trading-bot",
+            "fundamentals-pipeline",
             "legacy-raw-stage1",
             "--universe-path",
             "data/universe_current.csv",
@@ -352,7 +352,7 @@ def test_workflow_run_legacy_raw_stage1_window_invokes_step(monkeypatch) -> None
         captured.update(kwargs)
         return {"processed_2023": "data/processed/raw_fundamentals_2023.csv"}
 
-    monkeypatch.setattr("trading_bot.workflows.full_run.build_legacy_raw_stage1", _fake_build)
+    monkeypatch.setattr("fundamentals_pipeline.workflows.full_run.build_legacy_raw_stage1", _fake_build)
     artifacts = run_legacy_raw_stage1_window(start_year=2023, end_year=2023)
 
     assert artifacts["processed_2023"] == "data/processed/raw_fundamentals_2023.csv"

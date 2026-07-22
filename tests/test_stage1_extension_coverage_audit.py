@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from trading_bot.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
-from trading_bot.steps.stage1_extension_coverage_audit import (
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.steps.stage1_extension_coverage_audit import (
     run_stage1_extension_coverage_audit,
 )
 
@@ -101,7 +101,7 @@ def test_audit_counts_cogs_fallback_rows_from_simfin_cache(tmp_path) -> None:
 
 
 def test_cli_stage1_extension_audit_invokes_step(monkeypatch, capsys) -> None:
-    from trading_bot import __main__ as cli
+    from fundamentals_pipeline import __main__ as cli
 
     captured: dict[str, object] = {}
 
@@ -113,7 +113,7 @@ def test_cli_stage1_extension_audit_invokes_step(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "sys.argv",
         [
-            "trading-bot",
+            "fundamentals-pipeline",
             "stage1-extension-audit",
             "--processed-dir",
             "data/processed",
