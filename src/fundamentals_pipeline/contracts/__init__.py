@@ -44,6 +44,14 @@ from .stage1_fundamentals_schema import (
     stage1_yearly_columns,
     validate_stage1_frame_columns,
 )
+from .stage2_metrics_schema import (
+    METRICS_TREND_COLUMNS,
+    REASON_CODES,
+    MetricPoint,
+    ReasonCode,
+    TrendMetric,
+    create_metrics_trend_ddl,
+)
 
 __all__ = [
     "ANNUAL_COMPLETENESS_COLUMNS",
@@ -58,10 +66,14 @@ __all__ = [
     "FLOW_FIELDS",
     "HELPER_FALLBACK_FIELDS",
     "KEY_ISSUES_COLUMNS",
+    "METRICS_TREND_COLUMNS",
     "MetricMapping",
+    "MetricPoint",
     "MONETARY_RAW_FIELDS",
     "PER_SHARE_FIELDS",
     "PUBLISHED_UNIT_SCALE_NAME",
+    "REASON_CODES",
+    "ReasonCode",
     "RECONCILIATION_COLUMNS",
     "RECONCILIATION_SUMMARY_COLUMNS",
     "REQUIRED_CANONICAL_FIELDS",
@@ -75,7 +87,9 @@ __all__ = [
     "STOCK_FIELDS",
     "SUPPORT_RAW_FIELDS",
     "SUSPICIOUS_VALUES_COLUMNS",
+    "TrendMetric",
     "YTD_ANNUAL_FIELDS",
+    "create_metrics_trend_ddl",
     "get_metric_mapping",
     "load_sec_metric_contract",
     "stage1_yearly_columns",
