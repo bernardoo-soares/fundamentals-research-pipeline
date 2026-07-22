@@ -90,6 +90,16 @@ python -m fundamentals_pipeline legacy-stage1-audit `
   --end-year 2023
 ```
 
+Rebuild the DuckDB analytical warehouse:
+
+```powershell
+python -m fundamentals_pipeline warehouse-rebuild `
+  --processed-dir data/processed `
+  --warehouse-path data/warehouse/research.duckdb `
+  --reports-dir data/reports `
+  --start-year 2006 --end-year 2025
+```
+
 See all CLI commands:
 
 ```powershell
@@ -112,6 +122,8 @@ Representative outputs:
 - `data/reports/simfin_raw_unit_normalization_2023_2025.csv`
 - `data/reports/simfin_raw_alias_hits_2023_2025.csv`
 - `data/reports/stage1_extension_coverage_<start>_<end>.csv`
+- `data/warehouse/research.duckdb` (analytical store; rebuildable, git-ignored)
+- `data/reports/warehouse_health_<start>_<end>.csv`
 
 The core output key is:
 

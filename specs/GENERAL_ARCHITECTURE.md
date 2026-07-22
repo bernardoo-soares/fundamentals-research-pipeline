@@ -129,6 +129,8 @@ Stage 2 then appends computed metrics columns.
    - QA, coverage, validation, and diagnostic artifacts.
 4. `data/archive`
    - archived legacy provider artifacts that are not part of the active workspace path.
+5. `data/warehouse`
+   - the native DuckDB analytical store (`research.duckdb`), rebuildable from the Stage 1 CSVs; see `specs/2026-07-22_WAREHOUSE_FOUNDATION_DESIGN.md`.
 
 ## Active Inputs For This Phase
 1. `data/universe_current.csv`
@@ -161,6 +163,13 @@ Stage 2 then appends computed metrics columns.
    - `data/reports/simfin_raw_alias_hits_2023_2025.csv`
 6. implemented Stage 1 extension coverage audit artifact:
    - `data/reports/stage1_extension_coverage_<start>_<end>.csv`
+
+### Warehouse Outputs
+Analytical store built from the Stage 1 CSVs by `warehouse-rebuild` (native DuckDB;
+holds the Stage 2/3 tables as they are implemented). See
+`specs/2026-07-22_WAREHOUSE_FOUNDATION_DESIGN.md`.
+1. `data/warehouse/research.duckdb` (tables `fundamentals_quarterly`, `fundamentals_annual`, `build_log`; rebuildable, git-ignored)
+2. `data/reports/warehouse_health_<start>_<end>.csv`
 
 ### Stage 2 Outputs
 1. yearly computed ratios/features CSVs for `2006-2025`
