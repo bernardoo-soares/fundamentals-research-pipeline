@@ -96,20 +96,22 @@ re-verified on every refresh.
 | `dvpq` | 98–100% | 75–81% | |
 | `capxy` | 97–99% | 95% (2025: 0%) | annual file lags |
 
-### 3.3 Extension-field coverage (fields to be added, §5)
+### 3.3 Extension-field coverage (fields added, §5)
 
-| Field | Legacy availability | SimFin availability | Notes |
+| Field | Legacy availability (2006–2022) | SimFin availability (2023–2025) | Notes |
 |---|---|---|---|
-| COGS / gross profit | `cogsq` 98% | `Cost of Revenue` / `Gross Profit` 79% | some general-file companies report no COGS split |
-| SG&A | `xsgaq` 87% | `Selling, General & Administrative` 96% | |
-| R&D | `xrdq` 53% | `Research & Development` 49% | null usually means **no R&D program**, not missing data → neutral policy §6.3 |
-| D&A | `dpq` 81% | income-stmt col only **40%** → source from **cashflow stmt** `Depreciation & Amortization` instead | |
-| Total liabilities | `ltq` (Compustat standard) | `Total Liabilities` (verified in balance header) | removes the `atq − ceqq` approximation |
-| Inventories | `invtq` | `Inventories` | enables book's inventory check |
-| Receivables | `rectq` | `Accounts & Notes Receivable` | enables book's receivables check |
+| COGS / gross profit | `cogsq` 99% | `Cost of Revenue` / `Gross Profit` 89% | some general-file companies report no COGS split |
+| SG&A | `xsgaq` 78% | `Selling, General & Administrative` 86% | |
+| R&D | `xrdq` 47% | `Research & Development` 39% | null usually means **no R&D program**, not missing data → neutral policy §6.3 |
+| D&A | `dpq` 89% | 97% via **cashflow stmt** `Depreciation & Amortization`; income-stmt col only **40%** and is never used | |
+| Total liabilities | `ltq` 98% (Compustat standard) | `Total Liabilities` 100% (verified in balance header) | removes the `atq − ceqq` approximation |
+| Inventories | `invtq` 95% | `Inventories` 66% | enables book's inventory check |
+| Receivables | `rectq` 97% | `Accounts & Notes Receivable` 89% | enables book's receivables check |
 
-Legacy coverage figures are from a 60-ticker random sample over 2006–2023
-(3,325 rows); the Stage 1 extension sub-project re-measures on the full corpus.
+Figures above are measured on the full published corpus (all 502 universe
+tickers, 2006–2025; `data/reports/stage1_extension_coverage_2006_2025.csv`),
+superseding the earlier 60-ticker random-sample estimate (3,325 rows,
+2006–2023) used during initial design.
 
 ---
 
