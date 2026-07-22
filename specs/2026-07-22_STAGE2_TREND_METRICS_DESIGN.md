@@ -243,3 +243,18 @@ Mark the trend-metrics slice implemented in the Buffett spec §6 / §15.1 and no
 the deferred pieces (`metrics_quarterly`/TTM, family, valuation), and add the
 `metrics_trend` output to `specs/GENERAL_ARCHITECTURE.md`, per the `specs/`
 alignment rule.
+
+## 11. Known limitations (found during real-corpus verification 2026-07-22)
+
+- **`dvpq` has inconsistent cross-era semantics in Stage 1** (an UPSTREAM data
+  issue, not a metrics-engine defect). In the legacy Compustat era (2006–2022)
+  `dvpq` is *preferred* dividends (0 for companies with no preferred stock — e.g.
+  Coca-Cola reads 0 for 2006–2022), while the SimFin era (2023–2025) populated
+  `dvpq` with *total* dividends (KO 2023 ≈ 7952). Consequently
+  `dividend_payer_years_10y` reads ~0 for genuine dividend payers in the legacy
+  era. The metric faithfully counts `dvpq_annual > 0` per §3 — the number is
+  correct on its inputs but misleading due to the upstream mapping. The metric's
+  `formula` string carries this caveat so it is never trusted at face value.
+  **HIGH-PRIORITY Stage 1 fix required** before dvpq-based metrics feed scoring:
+  reconcile `dvpq` (and likely `prstkcy`) semantics across the two providers.
+  Track this against Stage 1 / the SimFin mapping, not the metrics engine.

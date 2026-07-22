@@ -51,7 +51,10 @@ REGISTRY: tuple[TrendMetric, ...] = (
     ),
     TrendMetric(
         "dividend_payer_years_10y", "1", 10,
-        "count of 10y window years with dvpq_annual > 0",
+        "count of 10y window years with dvpq_annual > 0 "
+        "(KNOWN LIMITATION: dvpq has inconsistent cross-era semantics in Stage 1 — "
+        "legacy Compustat = preferred dividends, SimFin = total dividends — so this "
+        "reads ~0 for genuine payers pre-2023 until the Stage 1 mapping is fixed)",
         count_years_metric(col("dvpq_annual"), 0.0, 10),
     ),
 )
