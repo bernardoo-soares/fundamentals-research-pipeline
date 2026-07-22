@@ -170,6 +170,7 @@ holds the Stage 2/3 tables as they are implemented). See
 `specs/2026-07-22_WAREHOUSE_FOUNDATION_DESIGN.md`.
 1. `data/warehouse/research.duckdb` (tables `fundamentals_quarterly`, `fundamentals_annual`, `build_log`; rebuildable, git-ignored)
 2. `data/reports/warehouse_health_<start>_<end>.csv`
+3. `metrics_trend` table in `research.duckdb` (Stage 2 windowed metrics; built by `metrics-build`)
 
 ### Stage 2 Outputs
 1. yearly computed ratios/features CSVs for `2006-2025`
