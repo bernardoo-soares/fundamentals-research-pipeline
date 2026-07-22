@@ -1,7 +1,7 @@
 # Stage 2 Metrics — Trend Metrics (slice 1) Design Specification
 
 Date: 2026-07-22
-Status: Approved design, pending implementation planning
+Status: Implemented (slice 1 — see §8)
 Relation: Implements the first slice of sub-project 3 (Stage 2 metrics engine) of
 `specs/2026-07-21_BUFFETT_RESEARCH_PLATFORM_DESIGN.md`. Reads the
 `fundamentals_annual` table built by the warehouse foundation
@@ -129,10 +129,10 @@ Combinators (pure factories in `metrics/windows.py`) turn a per-year quantity
 into a `compute` function, so registry entries are almost pure data:
 
 ```python
-def cagr_metric(series_fn, n): ...                     # endpoint rule
-def up_year_fraction_metric(series_fn, n): ...          # window trend
-def consistency_fraction_metric(series_fn, predicate, n): ...  # window consistency
-def count_years_metric(series_fn, predicate, n): ...    # window count
+def cagr_metric(series_fn, n): ...                       # endpoint rule
+def up_year_fraction_metric(series_fn, n): ...            # window trend
+def consistency_fraction_metric(series_fn, threshold, n): ...  # window consistency
+def count_years_metric(series_fn, threshold, n): ...      # window count
 
 # series_fn maps a ticker's annual frame -> pd.Series indexed by fiscal_year
 def col(name): ...              # e.g. col("saleq_annual")
@@ -144,7 +144,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
     TrendMetric("net_margin_ge20_years_10y", "1", 10,
                 "fraction of window years with niq_annual/saleq_annual > 0.20",
                 consistency_fraction_metric(ratio("niq_annual", "saleq_annual"),
-                                            predicate=lambda v: v > 0.20, n=10)),
+                                            threshold=0.20, n=10)),
     ...
 )
 ```
@@ -179,22 +179,38 @@ CLI (thin dispatcher):
 python -m fundamentals_pipeline metrics-build --warehouse-path data/warehouse/research.duckdb
 ```
 
-## 8. Module layout
+## 8. Module layout (final, as implemented)
 
 ```
 src/fundamentals_pipeline/
   contracts/
-    stage2_metrics_schema.py   # NEW: ReasonCode set, metrics_trend contract, TrendMetric, MetricPoint, REGISTRY
-  metrics/                     # NEW package (pure compute; no I/O)
+    stage2_metrics_schema.py   # ReasonCode set, metrics_trend contract, TrendMetric, MetricPoint dataclasses (compute-free)
+  metrics/                     # package (pure compute; no I/O)
     __init__.py
     windows.py                 # pure helpers + combinators (cagr_metric, *_fraction_metric, count_years_metric, col, ratio)
+    registry.py                 # REGISTRY: tuple[TrendMetric, ...] of the slice-1 metrics
     builder.py                 # reads fundamentals_annual, runs REGISTRY, writes metrics_trend (via connection.py)
-  __main__.py                  # NEW subcommand: metrics-build
+  __main__.py                  # subcommand: metrics-build
 ```
+
+Deviation from the original sketch above: `REGISTRY` lives in
+`metrics/registry.py`, not in `contracts/stage2_metrics_schema.py`. The
+contract module holds only the reason codes, the `MetricPoint`/`TrendMetric`
+dataclasses, and the `metrics_trend` schema — it stays compute-free and has no
+dependency on `metrics/windows.py`. `registry.py` imports both the contract
+(for `TrendMetric`) and `windows.py` (for the combinators), which would be a
+circular import if `REGISTRY` lived in the contract instead. `builder.py`
+imports `REGISTRY` from `metrics/registry.py`.
 
 `windows.py` holds the shared window logic (window slice for an `as_of_year`,
 coverage/endpoint checks, YoY-increase fraction, consistency fraction, count),
 so the metric functions stay one-liners.
+
+**Status: implemented.** All of §1.1 (contract, `metrics/` package, builder,
+`metrics-build` CLI, golden/property tests) is in place on
+`feature/stage2-trend-metrics`. §1.2 (`metrics_quarterly`/TTM, statement
+family, valuation/prices/volatility, scoring, UI) remains out of scope for a
+later slice.
 
 ## 9. Determinism and testing (the Prime Directive)
 
