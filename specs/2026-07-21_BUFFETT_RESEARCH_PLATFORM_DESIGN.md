@@ -599,3 +599,70 @@ quality gate green before merge, docs updated in the same change.
    applies the exclusion policy, and displays the caveat.
 5. No number anywhere in the UI lacks a traceable formula, version, and
    reason-coded null path.
+
+---
+
+## 15. Product Vision & Feature Roadmap
+
+User-prioritized features (product notes, 2026-07-22) mapped to the sub-project
+that delivers them. The layered architecture (fundamentals → metrics → scores →
+warehouse → UI) is what makes these features explainable and additive rather
+than bespoke dashboard code — every "ranking" is just *sort the universe by a
+stored, versioned, auditable metric or score*.
+
+### 15.1 Sub-project sequence (status as of 2026-07-22)
+
+| # | Sub-project | Status |
+|---|---|---|
+| SP1 | Stage 1 extension (7 raw fields) | DONE (PR #3) |
+| SP2 | Warehouse foundation (native DuckDB store) | DONE (PR #4) |
+| SP3 | Stage 2 metrics engine | IN PROGRESS — slice 1 = family-agnostic trend metrics |
+| SP4 | Stage 3 scoring (BuffettHeuristicScorer; component + composite scores) | deferred |
+| SP5 | Prices (Stooq EOD) + valuation & volatility | deferred |
+| SP6 | Streamlit UI (dashboard, rankings, smart search, score drilldown) | deferred |
+| SP7 | Portfolio module (holdings + contributions + vs-benchmark) | deferred (NEW) |
+| SP8 | Refresh (scheduled task + UI-triggered button) | deferred |
+
+### 15.2 Feature → sub-project mapping
+
+1. **Multi-dimensional ranking dashboard** (overall, growth, promising, debt,
+   cash-flow-consistent) → SP4 component/composite scores, rendered by SP6.
+   A ranking is "sort the universe by a stored metric/component". The
+   "cash-flow-consistent" dimension = an operating-cash-flow consistency metric
+   added in SP3.
+2. **High explainability** (formula-shown-is-formula-run; per-criterion audit;
+   reason-coded nulls) → first-class across SP3/SP4; surfaced in the SP6
+   drilldown. This is the Prime Directive (§1.1), not an add-on feature.
+3. **Smart company/ticker search → scores + multi-year performance** → SP6 UI;
+   metric history from `metrics_trend`, price performance from SP5.
+4. **"Risky" / "volatile" rankings** → SP4 debt-discipline component + SP5
+   price volatility.
+5. **Portfolio + performance; add value per ticker; daily one-shot price
+   fetch** → SP7 (a holdings/contributions model) + SP5 prices; compared to
+   the S&P per D8. Extends D8's descriptive look-back with position tracking.
+6. **CAGR front-and-center** → SP3 (revenue / retained-earnings CAGRs land in
+   slice 1).
+
+### 15.3 Cross-cutting principles (baked in from SP3 onward)
+
+1. **Metric registry is the single extension point.** Adding a metric = one
+   declarative `Metric(...)` entry (+ a pure function); combinators make most
+   metrics one-liners. Changing a computation bumps the metric `version` and
+   golden tests fail on drift. Metric thresholds are declarative fields (tuning
+   → version bump for reproducibility). Scoring weights/ramps are tuned in the
+   hash-pinned `scoring/buffett_scorecard.yml` (SP4) — no code change.
+2. **Callable core, thin entry points.** Every runtime action (warehouse
+   rebuild, metrics build, refresh) is a plain function returning structured
+   results. The CLI is a thin dispatcher; the SP6 UI can trigger the same
+   function from a button. This evolves D2's "read-only UI" stance: the UI
+   remains a read-only *viewer of data*, but may *trigger* refresh/build
+   actions (which are the only writes, alongside `manual_annotations` and the
+   SP7 portfolio store).
+
+### 15.4 Parked (explicitly out of core scope)
+
+- **"Most talked about" / news-social sentiment.** A separate data domain,
+  noisy and low-signal for a long-term Buffett-style fundamentals tool.
+  Recorded here as product vision only. If ever pursued, it must be an
+  optional, isolated data source that does not dilute the fundamentals focus.
+  Not scheduled.
