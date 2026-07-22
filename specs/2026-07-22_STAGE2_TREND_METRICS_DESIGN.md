@@ -53,8 +53,9 @@ harness.
 Two time-basis rule families apply (Buffett spec §6.1):
 
 - **CAGR (endpoint rule, §6.1.2):** `CAGR_N(x) = (x[as_of_year] / x[as_of_year−N])^(1/N) − 1`.
-  Requires both endpoints non-null; `x[start] ≤ 0 ⇒ null (negative_base)`; a
-  missing endpoint ⇒ null (`missing_input`).
+  Requires both endpoints non-null; `x[start] ≤ 0` **or** `x[end] < 0 ⇒ null
+  (negative_base)` — a non-positive base or a negative end makes the fractional
+  root undefined/complex; a missing endpoint ⇒ null (`missing_input`).
 - **Window rule (coverage, §6.1.3):** window = the `N` fiscal years ending at
   `as_of_year`; computed only if **≥ ⌈0.8·N⌉** years are present (i.e. ≥8 for
   N=10) else null (`insufficient_history`). Consistency = fraction of present
@@ -185,11 +186,11 @@ python -m fundamentals_pipeline metrics-build --warehouse-path data/warehouse/re
 src/fundamentals_pipeline/
   contracts/
     stage2_metrics_schema.py   # ReasonCode set, metrics_trend contract, TrendMetric, MetricPoint dataclasses (compute-free)
-  metrics/                     # package (pure compute; no I/O)
+  metrics/                     # windows.py + registry.py are pure (no I/O); builder.py is the I/O boundary
     __init__.py
-    windows.py                 # pure helpers + combinators (cagr_metric, *_fraction_metric, count_years_metric, col, ratio)
-    registry.py                 # REGISTRY: tuple[TrendMetric, ...] of the slice-1 metrics
-    builder.py                 # reads fundamentals_annual, runs REGISTRY, writes metrics_trend (via connection.py)
+    windows.py                 # PURE helpers + combinators (cagr_metric, *_fraction_metric, count_years_metric, col, ratio)
+    registry.py                 # PURE: REGISTRY: tuple[TrendMetric, ...] of the slice-1 metrics
+    builder.py                 # I/O: reads fundamentals_annual, runs REGISTRY, writes metrics_trend (via connection.py)
   __main__.py                  # subcommand: metrics-build
 ```
 
@@ -221,11 +222,12 @@ later slice.
 - **Combinator/unit tests:** `cagr` sign & symmetry (`CAGR_N` then inverse),
   `negative_base` on `start ≤ 0`, `insufficient_history` when < ⌈0.8·N⌉ present,
   up-year fraction on a known series, count/consistency predicates.
-- **Golden tests:** synthetic `fundamentals_annual` fixtures with **hand-computed**
-  expected values (an AAPL-shaped growth series; a KO-shaped steady-dividend
-  series), asserted end-to-end through `build_metrics_trend`. Real `data/` is
-  git-ignored, so committed goldens use synthetic fixtures (same pattern as the
-  warehouse tests).
+- **Golden test:** a synthetic `fundamentals_annual` fixture with a
+  **hand-computed** expected value (an 11-year constant-growth revenue series →
+  `revenue_cagr_10y == 0.10`), asserted end-to-end through `build_metrics_trend`.
+  Real `data/` is git-ignored, so committed goldens use synthetic fixtures (same
+  pattern as the warehouse tests). Broader multi-metric golden fixtures
+  (KO-shaped dividends, etc.) are a follow-up.
 - **Property test:** on every produced row, exactly one of `value` /
   `reason_code` is non-null; no non-null value ever arises from null inputs.
 - **CLI test:** `metrics-build` dispatches to the builder and prints the
