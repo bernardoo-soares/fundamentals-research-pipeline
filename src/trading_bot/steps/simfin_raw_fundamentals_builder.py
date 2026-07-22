@@ -71,6 +71,7 @@ SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
     "Change in Fixed Assets & Intangibles": "Change in Fixed Assets & Intangibles__annual",
     "Cash from (Repurchase of) Equity": "Cash from (Repurchase of) Equity__annual",
 }
+SIMFIN_CASHFLOW_DA_COLUMN = "Depreciation & Amortization__cashflow"
 
 
 def _normalize_ticker(value: object) -> str | None:
@@ -393,7 +394,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["cshopq"] = _empty_numeric_series(frame)
     out["ltq"] = _numeric_series(frame, "Total Liabilities")
     out["rectq"] = _numeric_series(frame, "Accounts & Notes Receivable")
-    out["dpq"] = _empty_numeric_series(frame)  # real mapping in Task 3
+    out["dpq"] = _numeric_series(frame, SIMFIN_CASHFLOW_DA_COLUMN)
     out["source_family"] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)
     return out[[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"]]
@@ -644,6 +645,9 @@ def build_simfin_raw_fundamentals(
             )
             for dataset_name in dataset_names
         ]
+        normalized_frames[2] = normalized_frames[2].rename(
+            columns={"Depreciation & Amortization": SIMFIN_CASHFLOW_DA_COLUMN}
+        )
         annual_frame = _normalize_annual_frame(
             bundle[SIMFIN_ANNUAL_CASHFLOW_FAMILY_DATASETS[family]],
             tickers=provider_tickers,

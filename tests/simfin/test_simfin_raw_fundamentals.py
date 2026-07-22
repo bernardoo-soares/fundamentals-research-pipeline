@@ -37,6 +37,7 @@ def _build_cache(cache_dir) -> None:
                 "Gross Profit": 40.0,
                 "Selling, General & Administrative": -12.0,
                 "Research & Development": -8.0,
+                "Depreciation & Amortization": 999.0,
             }
         ],
         [
@@ -58,6 +59,7 @@ def _build_cache(cache_dir) -> None:
             "Gross Profit",
             "Selling, General & Administrative",
             "Research & Development",
+            "Depreciation & Amortization",
         ],
     )
     _write_simfin_csv(
@@ -131,6 +133,7 @@ def _build_cache(cache_dir) -> None:
                 "Change in Fixed Assets & Intangibles": -9.0,
                 "Dividends Paid": -3.0,
                 "Cash from (Repurchase of) Equity": -7.0,
+                "Depreciation & Amortization": 11.0,
             }
         ],
         [
@@ -146,6 +149,7 @@ def _build_cache(cache_dir) -> None:
             "Change in Fixed Assets & Intangibles",
             "Dividends Paid",
             "Cash from (Repurchase of) Equity",
+            "Depreciation & Amortization",
         ],
     )
     _write_simfin_csv(
@@ -268,6 +272,7 @@ def _build_cache(cache_dir) -> None:
                 "Change in Fixed Assets & Intangibles": -5.0,
                 "Dividends Paid": -4.0,
                 "Cash from (Repurchase of) Equity": -9.0,
+                "Depreciation & Amortization": 7.0,
             }
         ],
         [
@@ -283,6 +288,7 @@ def _build_cache(cache_dir) -> None:
             "Change in Fixed Assets & Intangibles",
             "Dividends Paid",
             "Cash from (Repurchase of) Equity",
+            "Depreciation & Amortization",
         ],
     )
     _write_simfin_csv(
@@ -415,6 +421,7 @@ def test_build_simfin_raw_fundamentals_writes_yearly_outputs_and_reports(tmp_pat
     assert aapl["ltq"] == 0.0003
     assert aapl["invtq"] == 0.00003
     assert aapl["rectq"] == 0.000022
+    assert aapl["dpq"] == 0.000011  # cashflow D&A 11.0, NOT income decoy 999.0
 
     abcb = year_df[year_df["ticker"] == "ABCB"].iloc[0]
     assert pd.isna(abcb["xintq"])
@@ -427,6 +434,7 @@ def test_build_simfin_raw_fundamentals_writes_yearly_outputs_and_reports(tmp_pat
     assert pd.isna(abcb["xsgaq"])
     assert pd.isna(abcb["xrdq"])
     assert pd.isna(abcb["invtq"])
+    assert abcb["dpq"] == 0.000007
 
     coverage = pd.read_csv(artifacts["coverage_output"])
     assert coverage.loc[0, "rows_emitted"] == 2
