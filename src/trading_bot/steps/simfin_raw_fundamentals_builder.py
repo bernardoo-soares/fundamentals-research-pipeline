@@ -299,6 +299,19 @@ def _positive_outflow(frame: pd.DataFrame, column: str) -> pd.Series:
     return -raw
 
 
+def _positive_expense(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Convert SimFin negative income-statement expenses into positive values."""
+    raw = _numeric_series(frame, column)
+    return -raw
+
+
+def _derive_cogs(frame: pd.DataFrame) -> pd.Series:
+    """Map COGS from negated Cost of Revenue, else Revenue minus Gross Profit."""
+    direct = -_numeric_series(frame, "Cost of Revenue")
+    fallback = _numeric_series(frame, "Revenue") - _numeric_series(frame, "Gross Profit")
+    return direct.fillna(fallback)
+
+
 def _derive_eps(frame: pd.DataFrame) -> pd.Series:
     """Derive quarterly EPS from common net income and basic share count."""
     numerator = _numeric_series(frame, "Net Income (Common)")
@@ -345,6 +358,10 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["ppentq"] = _numeric_series(frame, "Property, Plant & Equipment, Net")
         out["gdwlq"] = _numeric_series(frame, "Goodwill")
         out["ivltq"] = _numeric_series(frame, "Long Term Investments & Receivables")
+        out["cogsq"] = _derive_cogs(frame)
+        out["xsgaq"] = _positive_expense(frame, "Selling, General & Administrative")
+        out["xrdq"] = _positive_expense(frame, "Research & Development")
+        out["invtq"] = _numeric_series(frame, "Inventories")
     elif family == "banks":
         out["xintq"] = _empty_numeric_series(frame)
         out["actq"] = _empty_numeric_series(frame)
@@ -352,6 +369,10 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["ppentq"] = _numeric_series(frame, "Net Fixed Assets")
         out["gdwlq"] = _empty_numeric_series(frame)
         out["ivltq"] = _numeric_series(frame, "Short & Long Term Investments")
+        out["cogsq"] = _empty_numeric_series(frame)
+        out["xsgaq"] = _empty_numeric_series(frame)
+        out["xrdq"] = _empty_numeric_series(frame)
+        out["invtq"] = _empty_numeric_series(frame)
     elif family == "insurance":
         out["xintq"] = _empty_numeric_series(frame)
         out["actq"] = _empty_numeric_series(frame)
@@ -359,6 +380,10 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["ppentq"] = _numeric_series(frame, "Property, Plant & Equipment, Net")
         out["gdwlq"] = _empty_numeric_series(frame)
         out["ivltq"] = _numeric_series(frame, "Total Investments")
+        out["cogsq"] = _empty_numeric_series(frame)
+        out["xsgaq"] = _empty_numeric_series(frame)
+        out["xrdq"] = _empty_numeric_series(frame)
+        out["invtq"] = _empty_numeric_series(frame)
     else:
         raise ValueError(f"Unsupported SimFin family: {family}")
 
@@ -366,13 +391,9 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["capxy"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles__annual")
     out["prstkcy"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity__annual")
     out["cshopq"] = _empty_numeric_series(frame)
-    out["cogsq"] = _empty_numeric_series(frame)
-    out["xsgaq"] = _empty_numeric_series(frame)
-    out["xrdq"] = _empty_numeric_series(frame)
-    out["dpq"] = _empty_numeric_series(frame)
-    out["ltq"] = _empty_numeric_series(frame)
-    out["invtq"] = _empty_numeric_series(frame)
-    out["rectq"] = _empty_numeric_series(frame)
+    out["ltq"] = _numeric_series(frame, "Total Liabilities")
+    out["rectq"] = _numeric_series(frame, "Accounts & Notes Receivable")
+    out["dpq"] = _empty_numeric_series(frame)  # real mapping in Task 3
     out["source_family"] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)
     return out[[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"]]
