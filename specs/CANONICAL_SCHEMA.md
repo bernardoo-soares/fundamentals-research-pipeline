@@ -72,7 +72,43 @@ These fields are retained because they support fallback logic, comparisons, or l
 4. `cshopq`: common share repurchase support field
 5. `cshoq`: basic shares outstanding support field
 
-### 2.3 Published Local Historical Stage 1 Artifacts
+### 2.2b Extended Raw Fields
+These fields were added for the Buffett-style metrics engine
+(`specs/2026-07-21_BUFFETT_RESEARCH_PLATFORM_DESIGN.md`). They are appended
+after the support fields in the published column order.
+
+1. `cogsq`: cost of goods sold / cost of revenue
+2. `xsgaq`: selling, general and administrative expense
+3. `xrdq`: research and development expense
+4. `dpq`: depreciation and amortization
+5. `ltq`: total liabilities
+6. `invtq`: inventories
+7. `rectq`: receivables, net
+
+All seven are monetary fields published in `USD millions`. Null when the
+source family does not report them (for example COGS for banks/insurance).
+
+### 2.3 Published Raw Fundamentals Scale
+Published raw fundamentals CSVs use one shared scale across provider windows so
+the yearly files stay directly comparable.
+
+Current published convention:
+1. monetary fields are stored in `USD millions`
+2. share-count fields are stored in `millions of shares`
+3. per-share fields remain unchanged
+
+Examples:
+1. `saleq`, `niq`, `atq`, `oancfq`, `oancfy`, `capxq`, `capxy`, `cogsq`, `ltq`:
+   - published in `USD millions`
+2. `cshfdq`, `cshopq`, `cshoq`:
+   - published in `millions of shares`
+3. `epspxq`:
+   - unchanged
+
+When a provider arrives in base units, the pipeline must apply a unit
+normalization pass after field mapping and before writing the yearly CSVs.
+
+### 2.4 Published Local Historical Stage 1 Artifacts
 For the implemented local historical path sourced from
 `data/raw/Processed-Fundamentals`, the published Stage 1 artifacts are:
 1. `data/processed/raw_fundamentals_<year>.csv`
@@ -85,7 +121,7 @@ Associated QA artifacts for this path live under `data/reports/`:
 2. `legacy_raw_missing_universe_<start>_<end>.csv`
 3. `legacy_raw_conflicts_<start>_<end>.csv`
 
-### 2.4 SimFin Raw Fundamentals Mapping Reference
+### 2.5 SimFin Raw Fundamentals Mapping Reference
 The SimFin `2023-2025` implementation should use:
 
 1. `specs/SIMFIN_STAGE1_MAPPING.md`
@@ -99,6 +135,9 @@ That reference defines, field by field, whether the SimFin mapping is:
 
 Unsupported fields should remain null and be surfaced in explicit QA artifacts
 rather than being filled with weak or semantically incorrect substitutes.
+
+For the current implementation, SimFin-mapped values are normalized into the
+same published scale before the yearly raw fundamentals files are written.
 
 ## 3) Derived Fundamentals Metrics To Compute
 These fields should be computed from the normalized raw fundamentals layer.

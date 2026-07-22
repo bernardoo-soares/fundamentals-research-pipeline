@@ -41,11 +41,35 @@ SUPPORT_RAW_FIELDS: tuple[str, ...] = (
     "cshoq",
 )
 
+EXTENDED_RAW_FIELDS: tuple[str, ...] = (
+    "cogsq",
+    "xsgaq",
+    "xrdq",
+    "dpq",
+    "ltq",
+    "invtq",
+    "rectq",
+)
+
+PER_SHARE_FIELDS: tuple[str, ...] = ("epspxq",)
+SHARE_COUNT_FIELDS: tuple[str, ...] = (
+    "cshfdq",
+    "cshopq",
+    "cshoq",
+)
+MONETARY_RAW_FIELDS: tuple[str, ...] = tuple(
+    field
+    for field in (*CORE_RAW_FIELDS, *SUPPORT_RAW_FIELDS, *EXTENDED_RAW_FIELDS)
+    if field not in (*PER_SHARE_FIELDS, *SHARE_COUNT_FIELDS)
+)
+PUBLISHED_UNIT_SCALE_NAME = "legacy_millions_scale"
+
 STAGE1_KEY_COLUMNS: tuple[str, ...] = ("ticker", "year", "quarter")
 STAGE1_OUTPUT_COLUMNS: tuple[str, ...] = (
     *STAGE1_KEY_COLUMNS,
     *CORE_RAW_FIELDS,
     *SUPPORT_RAW_FIELDS,
+    *EXTENDED_RAW_FIELDS,
 )
 
 

@@ -68,6 +68,16 @@ python -m fundamentals_pipeline simfin-raw-fundamentals `
   --end-year 2025
 ```
 
+Audit Stage 1 extension-field coverage:
+
+```powershell
+python -m fundamentals_pipeline stage1-extension-audit `
+  --processed-dir data/processed `
+  --reports-dir data/reports `
+  --start-year 2006 `
+  --end-year 2025
+```
+
 Audit legacy Stage 1 outputs:
 
 ```powershell
@@ -99,6 +109,9 @@ Representative outputs:
 - `data/reports/simfin_raw_missing_rows_2023_2025.csv`
 - `data/reports/simfin_raw_missing_fields_2023_2025.csv`
 - `data/reports/simfin_raw_family_conflicts_2023_2025.csv`
+- `data/reports/simfin_raw_unit_normalization_2023_2025.csv`
+- `data/reports/simfin_raw_alias_hits_2023_2025.csv`
+- `data/reports/stage1_extension_coverage_<start>_<end>.csv`
 
 The core output key is:
 
@@ -107,6 +120,11 @@ ticker, year, quarter
 ```
 
 Rows are sorted by ticker and quarter so downstream analysis can consume stable yearly CSVs.
+
+Published raw fundamentals use one shared scale across the full history: monetary fields in
+`USD millions`, share-count fields in `millions of shares`, and per-share fields unchanged. SimFin-native
+base units are normalized to that published scale before the yearly CSVs are written (see
+`specs/SIMFIN_STAGE1_MAPPING.md`).
 
 ## Data Notes
 
