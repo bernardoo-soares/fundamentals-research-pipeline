@@ -105,6 +105,13 @@ The Stage 1 builder should load and union three statement families:
 | `prstkcy` | `direct` with annual dataset and sign transform | annual `Cash from (Repurchase of) Equity` | same | same | Use the annual cashflow statement and convert outflow sign to positive spend. |
 | `cshopq` | `unsupported` | no verified shares-repurchased field | no verified shares-repurchased field | no verified shares-repurchased field | Do not map this to cash spent on repurchases; that is semantically wrong. |
 | `cshoq` | `direct` | `Shares (Basic)` | `Shares (Basic)` | `Shares (Basic)` | Strong direct mapping. |
+| `cogsq` | `direct` with sign transform, `derived` fallback | `Cost of Revenue` negated; fallback `Revenue − Gross Profit` | `unsupported` | `unsupported` | SimFin stores income expenses negative. |
+| `xsgaq` | `direct` with sign transform | `Selling, General & Administrative` negated | `unsupported` | `unsupported` | |
+| `xrdq` | `direct` with sign transform | `Research & Development` negated | `unsupported` | `unsupported` | Null usually means no R&D program. |
+| `dpq` | `direct` from cashflow statement | cashflow `Depreciation & Amortization` | same | same | Income-statement D&A is only ~40% populated and is never used; the cashflow column is renamed internally to avoid merge collisions. |
+| `ltq` | `direct` | `Total Liabilities` | `Total Liabilities` | `Total Liabilities` | |
+| `invtq` | `direct` | `Inventories` | `unsupported` | `unsupported` | |
+| `rectq` | `direct` | `Accounts & Notes Receivable` | `Accounts & Notes Receivable` | `Accounts & Notes Receivable` | |
 
 ## Fields That Should Not Be Forced
 The following Stage 1 fields should remain nullable when no high-confidence
@@ -130,6 +137,10 @@ cash outflows for spend-oriented fields:
 3. `dvpq`
    - source: `Dividends Paid`
    - transform: negate source value
+4. `cogsq`, `xsgaq`, `xrdq`
+   - source: income-statement expense columns stored as negative values
+   - transform: negate so Stage 1 stores positive expense amounts,
+     matching the legacy Compustat convention
 
 ## Recommended Internal Mapping Policy
 Implementation should keep Stage 1 field names internal to the pipeline even if

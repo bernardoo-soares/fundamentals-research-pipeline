@@ -72,6 +72,22 @@ These fields are retained because they support fallback logic, comparisons, or l
 4. `cshopq`: common share repurchase support field
 5. `cshoq`: basic shares outstanding support field
 
+### 2.2b Extended Raw Fields
+These fields were added for the Buffett-style metrics engine
+(`specs/2026-07-21_BUFFETT_RESEARCH_PLATFORM_DESIGN.md`). They are appended
+after the support fields in the published column order.
+
+1. `cogsq`: cost of goods sold / cost of revenue
+2. `xsgaq`: selling, general and administrative expense
+3. `xrdq`: research and development expense
+4. `dpq`: depreciation and amortization
+5. `ltq`: total liabilities
+6. `invtq`: inventories
+7. `rectq`: receivables, net
+
+All seven are monetary fields published in `USD millions`. Null when the
+source family does not report them (for example COGS for banks/insurance).
+
 ### 2.3 Published Raw Fundamentals Scale
 Published raw fundamentals CSVs use one shared scale across provider windows so
 the yearly files stay directly comparable.
@@ -82,7 +98,7 @@ Current published convention:
 3. per-share fields remain unchanged
 
 Examples:
-1. `saleq`, `niq`, `atq`, `oancfq`, `oancfy`, `capxq`, `capxy`:
+1. `saleq`, `niq`, `atq`, `oancfq`, `oancfy`, `capxq`, `capxy`, `cogsq`, `ltq`:
    - published in `USD millions`
 2. `cshfdq`, `cshopq`, `cshoq`:
    - published in `millions of shares`

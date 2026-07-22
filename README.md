@@ -42,6 +42,7 @@ python -m trading_bot legacy-fundamentals --start-date 2023-01-01 --end-date 202
 python -m trading_bot legacy-raw-stage1 --raw-dir data/raw/Processed-Fundamentals --output-dir data/processed --reports-dir data/reports --start-year 2006 --end-year 2023
 python -m trading_bot simfin-raw-fundamentals --universe-path data/universe_current.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025
 python -m trading_bot simfin-raw-fundamentals --universe-path data/universe_current.csv --output-dir data/processed --reports-dir data/reports --start-year 2023 --end-year 2025 --refresh-quarterly-cache --quarterly-refresh-days 0
+python -m trading_bot stage1-extension-audit --processed-dir data/processed --reports-dir data/reports --start-year 2006 --end-year 2025
 python -m trading_bot sec-map-cik --universe-path data/universe_current.csv --output-path data/reports/sec_cik_mapping.csv
 python -m trading_bot sec-ingest-raw --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/companyfacts --log-path data/reports/sec_ingestion_log.csv
 python -m trading_bot sec-ingest-submissions --mapping-path data/reports/sec_cik_mapping.csv --raw-dir data/raw/sec/submissions --log-path data/reports/sec_submissions_ingestion_log.csv
@@ -87,6 +88,7 @@ Currently generated when the corresponding implemented CLI stage runs:
 - `data/reports/sec_processed_coverage_2023_2025.csv`
 - `data/reports/sec_fundamentals_conflicts_2023_2025.csv`
 - `data/reports/sec_fiscal_resolution_unresolved_2023_2025.csv`
+- `data/reports/stage1_extension_coverage_<start>_<end>.csv`
 
 `legacy-raw-stage1` publishes raw and support fields only with leading columns
 `ticker,year,quarter`. Ratio computation is intentionally deferred to a later
