@@ -24,6 +24,7 @@ from .steps.sec_submissions_pipeline import (
     run_sec_submissions_ingestion,
 )
 from .steps.sp500_universe_builder import build_sp500_current_universe
+from .steps.stage1_extension_coverage_audit import run_stage1_extension_coverage_audit
 
 LOG = get_logger(__name__)
 
@@ -158,6 +159,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     legacy_audit_parser.add_argument("--start-year", type=int, default=2006)
     legacy_audit_parser.add_argument("--end-year", type=int, default=2023)
+
+    extension_audit_parser = subparsers.add_parser(
+        "stage1-extension-audit",
+        help="Audit extension-field coverage in published raw fundamentals CSVs.",
+    )
+    extension_audit_parser.add_argument(
+        "--processed-dir",
+        default=str(settings.processed_data_dir),
+    )
+    extension_audit_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    extension_audit_parser.add_argument("--start-year", type=int, default=2006)
+    extension_audit_parser.add_argument("--end-year", type=int, default=2025)
+    extension_audit_parser.add_argument(
+        "--simfin-cache-dir",
+        default=str(settings.simfin_data_dir),
+    )
 
     sec_map_parser = subparsers.add_parser(
         "sec-map-cik",
@@ -373,6 +393,28 @@ def main() -> None:
             end_year=args.end_year,
         )
         LOG.info("Legacy Stage 1 audit completed: %s", artifacts)
+        for key, value in artifacts.items():
+            print(f"{key}={value}")
+        return
+
+    if args.command == "stage1-extension-audit":
+        LOG.info(
+            "Running Stage 1 extension coverage audit: processed_dir=%s reports_dir=%s "
+            "start_year=%d end_year=%d simfin_cache_dir=%s",
+            args.processed_dir,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+            args.simfin_cache_dir,
+        )
+        artifacts = run_stage1_extension_coverage_audit(
+            processed_dir=args.processed_dir,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+            simfin_cache_dir=args.simfin_cache_dir,
+        )
+        LOG.info("Stage 1 extension coverage audit completed: %s", artifacts)
         for key, value in artifacts.items():
             print(f"{key}={value}")
         return

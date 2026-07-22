@@ -25,6 +25,7 @@ from .sec_submissions_pipeline import (
     run_sec_submissions_ingestion,
 )
 from .sp500_universe_builder import build_sp500_current_universe
+from .stage1_extension_coverage_audit import run_stage1_extension_coverage_audit
 
 # Re-export step entrypoints used by CLI and workflows.
 __all__ = [
@@ -41,4 +42,5 @@ __all__ = [
     "run_legacy_stage1_audit",
     "run_sec_raw_ingestion",
     "run_sec_submissions_ingestion",
+    "run_stage1_extension_coverage_audit",
 ]
