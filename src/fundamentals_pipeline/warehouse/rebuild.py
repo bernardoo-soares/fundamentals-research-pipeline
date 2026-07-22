@@ -56,6 +56,10 @@ def rebuild_warehouse(
                 end_year=end_year,
             )
             finished = datetime.now(UTC).replace(tzinfo=None)
+            # build_log records successful rebuilds only: a failed rebuild raises
+            # (see the except block below) and discards the temp DB, so this
+            # atomic no-op never reaches this INSERT. The schema's 'failed'
+            # gate_status is intentionally never written in v1.
             conn.execute(
                 "INSERT INTO build_log VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [

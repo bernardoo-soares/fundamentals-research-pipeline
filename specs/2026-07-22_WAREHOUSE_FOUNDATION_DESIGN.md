@@ -59,9 +59,9 @@ src/fundamentals_pipeline/
     __init__.py
     connection.py     # open_warehouse() context manager + read-only query(sql)->DataFrame; sole opener
     schema.py         # table DDL + provenance columns
-    fundamentals_loader.py  # load fundamentals_quarterly from Stage 1 CSVs (validated)
+    fundamentals_loader.py  # load fundamentals_quarterly from Stage 1 CSVs; enforces the hard gates (column contract + key uniqueness)
     annualize.py      # fundamentals_quarterly -> fundamentals_annual (SQL, per §6.1)
-    validation.py     # hard gates + data-health report
+    validation.py     # warning-level data-health report only
     rebuild.py        # orchestration: staging build -> validate -> atomic swap -> build_log
 ```
 
@@ -171,6 +171,10 @@ CREATE TABLE build_log (
 **Hard gates (block the rebuild, raise explicit exceptions — no `SystemExit`):**
 1. Each loaded year's columns equal `STAGE1_OUTPUT_COLUMNS`.
 2. `(ticker, year, quarter)` is unique.
+
+These two hard gates are enforced at load time in `fundamentals_loader.py`
+(`_validate_columns`, `_validate_unique_keys`); `validation.py` produces the
+warning-level data-health report only and never raises.
 
 **Warnings (flagged, non-blocking) → `data/reports/warehouse_health_<start>_<end>.csv`:**
 1. Reconciliation `|atq − (ltq + ceqq)| / atq ≤ 5%` per row (§6.4.5); rows outside
