@@ -51,7 +51,7 @@ This project informs real investment decisions. Every displayed number must be:
 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
-| D1 | Analytical storage | **DuckDB + Parquet** (`data/warehouse/`) | Single-file analytical DB; SQL window functions for trend metrics; matches 2026-03-15 direction. CSVs remain the raw audit/publish layer. |
+| D1 | Analytical storage | **DuckDB + Parquet** (`data/warehouse/`) — native DuckDB tables in a single research.duckdb; Parquet deferred (one-line COPY export when needed) — see specs/2026-07-22_WAREHOUSE_FOUNDATION_DESIGN.md. | Single-file analytical DB; SQL window functions for trend metrics; matches 2026-03-15 direction. CSVs remain the raw audit/publish layer. |
 | D2 | UI stack | **Streamlit** | Python-native, same venv/repo, fastest iteration; UI is a read-only viewer so polish ceiling is acceptable. |
 | D3 | Refresh trigger | **Windows Task Scheduler → `fundamentals-pipeline refresh` CLI** | OS-native, runs unattended, logs + diff reports; catches up after missed runs. |
 | D4 | Scoring style | **Graded ramps + literal book checklist, side by side** | Smooth 0–100 scoring anchored on book thresholds avoids cliff effects; the literal pass/fail checklist is always shown too. |

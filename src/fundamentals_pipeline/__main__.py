@@ -25,6 +25,7 @@ from .steps.sec_submissions_pipeline import (
 from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
 from .steps.sp500_universe_builder import build_sp500_current_universe
 from .steps.stage1_extension_coverage_audit import run_stage1_extension_coverage_audit
+from .warehouse.rebuild import rebuild_warehouse
 
 LOG = get_logger(__name__)
 
@@ -162,6 +163,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     legacy_audit_parser.add_argument("--start-year", type=int, default=2006)
     legacy_audit_parser.add_argument("--end-year", type=int, default=2023)
+
+    warehouse_parser = subparsers.add_parser(
+        "warehouse-rebuild",
+        help="Rebuild the DuckDB warehouse from the published Stage 1 CSVs.",
+    )
+    warehouse_parser.add_argument(
+        "--processed-dir",
+        default=str(settings.processed_data_dir),
+    )
+    warehouse_parser.add_argument(
+        "--warehouse-path",
+        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+    )
+    warehouse_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    warehouse_parser.add_argument("--start-year", type=int, default=2006)
+    warehouse_parser.add_argument("--end-year", type=int, default=2025)
 
     extension_audit_parser = subparsers.add_parser(
         "stage1-extension-audit",
@@ -569,6 +589,28 @@ def main() -> None:
         )
         LOG.info("SEC fiscal calendar build completed with %d rows.", len(df))
         print(f"fiscal_calendar_rows={len(df)}")
+        return
+
+    if args.command == "warehouse-rebuild":
+        LOG.info(
+            "Running warehouse rebuild: processed_dir=%s warehouse_path=%s "
+            "reports_dir=%s start_year=%d end_year=%d",
+            args.processed_dir,
+            args.warehouse_path,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+        )
+        artifacts = rebuild_warehouse(
+            processed_dir=args.processed_dir,
+            warehouse_path=args.warehouse_path,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+        )
+        LOG.info("Warehouse rebuild completed: %s", artifacts)
+        for key, value in artifacts.items():
+            print(f"{key}={value}")
         return
 
     parser.error(f"Unknown command: {args.command}")
