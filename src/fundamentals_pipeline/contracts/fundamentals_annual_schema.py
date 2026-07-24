@@ -24,7 +24,7 @@ FLOW_FIELDS: tuple[str, ...] = (
     "xrdq",
     "dpq",
 )
-YTD_ANNUAL_FIELDS: tuple[str, ...] = ("oancfy", "capxy", "prstkcy")
+YTD_ANNUAL_FIELDS: tuple[str, ...] = ("oancfy", "capxy", "prstkcy", "dvy")
 STOCK_FIELDS: tuple[str, ...] = (
     "actq",
     "lctq",

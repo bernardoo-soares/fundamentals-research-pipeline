@@ -39,6 +39,9 @@ SUPPORT_RAW_FIELDS: tuple[str, ...] = (
     "prstkcy",
     "cshopq",
     "cshoq",
+    # Total cash dividends, year-to-date. Distinct from `dvpq`, which is
+    # preferred dividends only (Compustat: "Dividends - Preferred/Preference").
+    "dvy",
 )
 
 EXTENDED_RAW_FIELDS: tuple[str, ...] = (

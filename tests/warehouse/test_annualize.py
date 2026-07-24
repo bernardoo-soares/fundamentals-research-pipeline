@@ -84,3 +84,19 @@ def test_stock_null_when_no_q4(tmp_path, write_stage1_year) -> None:
     result = _build(tmp_path, write_stage1_year, {2024: rows}).iloc[0]
     assert math.isnan(result["atq_q4"])
     assert bool(result["has_q4"]) is False
+
+
+def test_dvy_annual_takes_q4_value_not_sum(tmp_path, write_stage1_year) -> None:
+    """Legacy dvy is cumulative year-to-date: Q4 already holds the full year.
+
+    Summing the four quarters would roughly double-count. KO FY2023 real
+    figures: the Q4 cumulative 7952 is the answer, not 101+2089+4078+7952.
+    """
+    rows = [
+        _row("AAPL", 2024, 1, dvy=101.0),
+        _row("AAPL", 2024, 2, dvy=2089.0),
+        _row("AAPL", 2024, 3, dvy=4078.0),
+        _row("AAPL", 2024, 4, dvy=7952.0),
+    ]
+    frame = _build(tmp_path, write_stage1_year, {2024: rows})
+    assert frame["dvy_annual"].iloc[0] == 7952.0

@@ -69,6 +69,7 @@ SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
     "Net Cash from Operating Activities": "Net Cash from Operating Activities__annual",
     "Change in Fixed Assets & Intangibles": "Change in Fixed Assets & Intangibles__annual",
     "Cash from (Repurchase of) Equity": "Cash from (Repurchase of) Equity__annual",
+    "Dividends Paid": "Dividends Paid__annual",
 }
 SIMFIN_CASHFLOW_DA_COLUMN = "Depreciation & Amortization__cashflow"
 
@@ -390,6 +391,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["oancfy"] = _numeric_series(frame, "Net Cash from Operating Activities__annual")
     out["capxy"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles__annual")
     out["prstkcy"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity__annual")
+    out["dvy"] = _positive_outflow(frame, "Dividends Paid__annual")
     out["cshopq"] = _empty_numeric_series(frame)
     out["ltq"] = _numeric_series(frame, "Total Liabilities")
     out["rectq"] = _numeric_series(frame, "Accounts & Notes Receivable")

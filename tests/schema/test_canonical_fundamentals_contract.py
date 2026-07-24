@@ -88,3 +88,14 @@ def test_published_scale_uses_legacy_million_convention() -> None:
     assert "saleq" in MONETARY_RAW_FIELDS
     assert "cshfdq" in SHARE_COUNT_FIELDS
     assert PER_SHARE_FIELDS == ("epspxq",)
+
+
+def test_dvy_is_published_support_field() -> None:
+    """Total cash dividends, distinct from preferred-only `dvpq`."""
+    assert "dvy" in SUPPORT_RAW_FIELDS
+    assert "dvy" in STAGE1_OUTPUT_COLUMNS
+
+
+def test_dvy_is_monetary() -> None:
+    """dvy is a currency amount, so unit normalization must apply to it."""
+    assert "dvy" in MONETARY_RAW_FIELDS

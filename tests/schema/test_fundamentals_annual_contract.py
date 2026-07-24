@@ -25,7 +25,7 @@ def test_classification_partitions_all_stage1_raw_fields() -> None:
 
 def test_classification_counts() -> None:
     assert len(FLOW_FIELDS) == 14
-    assert len(YTD_ANNUAL_FIELDS) == 3
+    assert len(YTD_ANNUAL_FIELDS) == 4  # + dvy (total cash dividends, YTD)
     assert len(STOCK_FIELDS) == 18
 
 
@@ -36,7 +36,7 @@ def test_annual_value_columns_order_and_suffixes() -> None:
         *(f"{f}_q4" for f in STOCK_FIELDS),
     )
     assert ANNUAL_VALUE_COLUMNS == expected
-    assert len(ANNUAL_VALUE_COLUMNS) == 35
+    assert len(ANNUAL_VALUE_COLUMNS) == 36
 
 
 def test_key_and_completeness_columns() -> None:
