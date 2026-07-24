@@ -1,7 +1,7 @@
 # Stage 1 Cross-Era Remediation (SP1b) — Design Specification
 
 Date: 2026-07-24
-Status: Approved, not yet implemented
+Status: Implemented 2026-07-24 (branch `feature/stage1-cross-era-remediation`)
 Relation: Remediates the Stage 1 layer defined in
 `specs/2026-07-21_BUFFETT_RESEARCH_PLATFORM_DESIGN.md` §5 and the SimFin mapping
 in `specs/SIMFIN_STAGE1_MAPPING.md`. Blocks sub-project 4 (scoring), which must
@@ -106,6 +106,41 @@ reconciliation window; it does **not** materially repair the current year.
 | `prstkcy` | gross repurchase (1 negative in 30,187) | net equity flow (488 negative in 3,548) | **Minor** — declared, measured |
 
 ---
+
+### 2.5 Measured results after implementation (2026-07-24)
+
+| Acceptance criterion | Target | Measured |
+|---|---|---|
+| FY2023 universe coverage (>=4 quarters) | >= 480 | **493 of 502** (was 380) |
+| `dvy_annual` FY2023 golden values | exact | AAPL **15025**, KO **7952**, MSFT **19800** |
+| `dividend_payer_years_10y` mean at as_of 2022 | plausible for a dividend-heavy index | **7.93** (was 1.43) |
+| `prstkcq` null across legacy era | all rows | **30,660 of 30,660** |
+| `source_era` populated | every row | **0 nulls**; BA/C/COP/CB/AMT served by legacy, AAPL/KO by SimFin |
+| `value` XOR `reason_code` in `metrics_trend` | holds | **0 both, 0 neither** of 42,557 |
+| `metrics_trend` rows with no matching annual row | 0 | **0** (was 90; era resolution closed the year gaps) |
+
+Two defects were found by running the audit against the real corpus, both
+fixed in commit `032c8cf`:
+
+1. **In the audit itself.** It compared year-to-date fields quarter by
+   quarter, but legacy states them cumulatively while SimFin broadcasts the
+   annual total into all four quarters, so Q1-Q3 disagreed by construction.
+   YTD fields are now compared at Q4 only. `dvy` moved 0.24 -> 0.943.
+2. **A new data defect.** `txtq` and `tstkq` were sign-inverted between eras
+   (99.1% and 99.9% sign-flip rates, magnitude ratio -1.0; JNJ `tstkq` legacy
+   75662 vs SimFin -75662). The SimFin builder applied `_positive_expense` to
+   `xsgaq`/`xrdq` but not to these. `tstkq` is the dangerous one:
+   `debt_to_equity_adj` adds it back, so the flip computed a different formula
+   per era. After the fix, `tstkq` 0.967 and `txtq` 0.937 agreement.
+
+**18 fields remain in CONTRADICTION** and are genuine open items, listed in
+`data/reports/cross_era_reconciliation_2023.csv`. The largest are `cogsq`
+(0.14), `req` (0.22), `dlttq` (0.27), `ppentq` (0.27), `xsgaq` (0.29). These
+are unresolved provider definitional differences, **not** silenced: the
+contract forbids lowering a threshold without a written justification, so they
+stay visible until each is investigated. `saleq` (0.869), `cshfdq` (0.868) and
+`xrdq` (0.860) sit just under the 0.90 default and are likely tolerance
+calibration rather than defects.
 
 ## 3. Decisions
 

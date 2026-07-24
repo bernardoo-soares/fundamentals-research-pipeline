@@ -103,6 +103,8 @@ python -m fundamentals_pipeline warehouse-rebuild `
 Compute Stage 2 trend metrics into the warehouse:
 
 ```powershell
+python -m fundamentals_pipeline stage1-resolve-era --start-year 2006 --end-year 2025
+python -m fundamentals_pipeline cross-era-audit --year 2023
 python -m fundamentals_pipeline metrics-build `
   --warehouse-path data/warehouse/research.duckdb
 ```

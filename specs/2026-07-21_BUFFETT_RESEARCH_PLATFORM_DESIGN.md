@@ -73,7 +73,8 @@ re-verified on every refresh.
 | Year(s) | Source | Rows/quarters | Universe coverage |
 |---|---|---|---|
 | 2006–2022 | legacy Compustat CSVs | 4 quarters | 412–466 of 502 tickers |
-| 2023–2024 | SimFin | 4 full quarters | **385–389 of 502 tickers** (~117 names absent from SimFin entirely) |
+| 2023 | legacy + SimFin, era-resolved | 4 full quarters | **493 of 502 tickers** (was 380 when SimFin was the sole 2023+ source; see `specs/2026-07-24_STAGE1_CROSS_ERA_REMEDIATION_DESIGN.md`) |
+| 2024 | SimFin (legacy has only 33 complete ticker-years) | 4 full quarters | **384 of 502 tickers** (~117 names absent from SimFin entirely) |
 | 2025 | SimFin | **Q1: 395, Q2: 58, Q3: 28, Q4: 0** | partial |
 
 - SimFin cache freshly pulled 2026-03-29/30; max publish date present
@@ -93,7 +94,8 @@ re-verified on every refresh.
 | `actq`/`lctq` | 78–83% | 93% | financials don't report; by design |
 | `gdwlq` | 84–94% | **0%** | SimFin balance file has **no goodwill column at all** (verified against full header) |
 | `tstkq` | 96–99% | **57–58%** | SimFin sparse; fallback policy §6.3 |
-| `dvpq` | 98–100% | 75–81% | |
+| `dvpq` | 98–100% | **0% (by design)** | `dvpq` is **preferred** dividends (Compustat: "Dividends - Preferred/Preference"). SimFin publishes no such column. Total dividends are carried by `dvy`, added 2026-07-24. |
+| `dvy` | 98–100% | 73% | total cash dividends, YTD. Cross-era equivalence measured: 94.3% agree within 1% on the FY2023 overlap. |
 | `capxy` | 97–99% | 95% (2025: 0%) | annual file lags |
 
 ### 3.3 Extension-field coverage (fields added, §5)
@@ -284,7 +286,7 @@ era availability.
 | `retained_earnings_cagr_10y` | `CAGR_10(req)` (Q4 values); `negative_base` handled | steady additions |
 | `buyback_years_10y` | count of window years with `prstkcy > 0` | buybacks = good sign |
 | `treasury_stock_present` | `tstkq > 0` latest | presence = good sign |
-| `dividend_payer_years_10y` | count of window years with `dvpq_annual > 0` | informational |
+| `dividend_payer_years_10y` | count of window years with `dvy_annual > 0` (v2; was `dvpq_annual`, which is preferred-only) | informational |
 
 **Growth & working-capital quality** (all families unless noted):
 
@@ -326,11 +328,14 @@ not_applicable_sector | insufficient_history | tstk_unavailable`.
 
 1. **Pure functions**: metrics code is frame-in → frame-out. No I/O, network,
    clock, or randomness. Same input ⇒ same output.
-2. **Golden tests**: committed fixtures with hand-computed expected values from
-   the real published CSVs for: AAPL (general, buybacks, R&D), KO (general,
-   no R&D, dividends), JPM (bank — n.a. cascade), TRV (insurance family),
-   plus one negative-equity name if present in-universe (candidate identified
-   during implementation from the actual data). Any drift fails CI.
+2. **Golden tests**: two kinds, and the distinction is load-bearing.
+   *Real* golden values are hand-verified against the published corpus and
+   pinned in tests — currently `dvy_annual` for AAPL (15025), KO (7952) and
+   MSFT (19800) at FY2023. *Synthetic* fixtures exercise mechanics only and
+   are named for convenience, not sourced from real filings; the Stage 2
+   slice-1 metric tests are of this kind. The broader ambition below (JPM
+   bank cascade, TRV insurance, a negative-equity name) is **not yet
+   implemented** — do not read it as done. Any drift in a pinned value fails CI.
 3. **Property tests**: null-in ⇒ null-or-reasoned-out; no non-null from null
    inputs; CAGR sign/symmetry; zero-denominator handling; annualization
    requires exactly 4 quarters.
@@ -338,7 +343,12 @@ not_applicable_sector | insufficient_history | tstk_unavailable`.
    formula string (shown in UI tooltips), version, unit, applicability, era.
    The registry is the single source both for computation dispatch and UI
    display — formula shown is formula run.
-5. **Reconciliation sanity checks** (warning-level QA, not hard gates):
+5. **Cross-era semantic audit** (`cross-era-audit`): every field declares its
+   per-era provider source, unit and basis in `contracts/field_era_semantics.py`;
+   the audit measures legacy-vs-SimFin agreement on the FY2023 overlap and
+   raises when a declared equivalence is contradicted. This is the gate that
+   would have caught the `dvpq`, `prstkcq` and `txtq`/`tstkq` defects.
+6. **Reconciliation sanity checks** (warning-level QA, not hard gates):
    `|atq − (ltq + ceqq)| / atq ≤ 5%` else row flagged in data-health report;
    unit-magnitude checks (e.g. AAPL revenue in expected millions range).
 
