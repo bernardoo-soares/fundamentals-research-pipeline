@@ -56,6 +56,7 @@ def test_annual_columns_match_contract(tmp_path) -> None:
         *ANNUAL_VALUE_COLUMNS,
         "quarters_present",
         "has_q4",
+        "source_era",
         "computed_at",
         "pipeline_version",
     ]

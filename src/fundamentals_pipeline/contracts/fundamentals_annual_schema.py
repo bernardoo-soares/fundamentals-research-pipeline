@@ -49,6 +49,12 @@ STOCK_FIELDS: tuple[str, ...] = (
 ANNUAL_KEY_COLUMNS: tuple[str, ...] = ("ticker", "fiscal_year")
 ANNUAL_COMPLETENESS_COLUMNS: tuple[str, ...] = ("quarters_present", "has_q4")
 
+# Provenance carried through from fundamentals_quarterly. Era resolution is
+# whole-ticker-year, so a fiscal year has exactly one provider; this is null
+# only if that invariant is ever violated, which the metrics layer treats as
+# a mixed-era window rather than trusting it.
+ANNUAL_PROVENANCE_COLUMNS: tuple[str, ...] = ("source_era",)
+
 # Ordered annual value columns: flow `_annual`, then ytd `_annual`, then stock `_q4`.
 ANNUAL_VALUE_COLUMNS: tuple[str, ...] = (
     *(f"{field}_annual" for field in FLOW_FIELDS),

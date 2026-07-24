@@ -24,6 +24,7 @@ class ReasonCode:
     NOT_APPLICABLE_SECTOR = "not_applicable_sector"
     INSUFFICIENT_HISTORY = "insufficient_history"
     TSTK_UNAVAILABLE = "tstk_unavailable"
+    MIXED_ERA_WINDOW = "mixed_era_window"
 
 
 REASON_CODES: frozenset[str] = frozenset(
@@ -35,6 +36,7 @@ REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.NOT_APPLICABLE_SECTOR,
         ReasonCode.INSUFFICIENT_HISTORY,
         ReasonCode.TSTK_UNAVAILABLE,
+        ReasonCode.MIXED_ERA_WINDOW,
     }
 )
 
@@ -59,13 +61,20 @@ class MetricPoint:
 
 @dataclass(frozen=True)
 class TrendMetric:
-    """A declarative trend-metric: identity + a pure compute function."""
+    """A declarative trend-metric: identity + a pure compute function.
+
+    `requires_single_era` marks a metric whose inputs are not comparable
+    across the provider boundary (see contracts/field_era_semantics.py). Such
+    a metric must be composed with `windows.require_single_era`, which nulls
+    any window spanning more than one `source_era` with `mixed_era_window`.
+    """
 
     metric_id: str
     version: str
     window_length: int
     formula: str
     compute: Callable[[Any], list[MetricPoint]]
+    requires_single_era: bool = False
 
 
 METRICS_TREND_COLUMNS: tuple[str, ...] = (

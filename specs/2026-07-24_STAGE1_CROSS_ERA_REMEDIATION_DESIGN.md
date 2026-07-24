@@ -250,12 +250,50 @@ that spans the boundary, so it would inherit the same failure mode that made
 `retained_earnings_cagr_10y` wrong (§2.6).
 
 `cogsq` is declared `eras_equivalent=False` with the scoring consequence
-recorded in the declaration and asserted by a contract test. **A product
-decision is required before the Stage 2 family slice**: restrict gross-margin
-metrics to a single era, pin them to one provider for the whole history, or
-drop the gross-margin family from the scorecard. `xsgaq` (0.29) is the
-complementary side of the same split and is very likely the same cause, but
-that has **not** been separately verified.
+recorded in the declaration and asserted by a contract test.
+
+### 2.9 Decision: gross-margin metrics are restricted to a single era
+
+Chosen 2026-07-24 over pinning to one provider or dropping the family. Recorded
+as enforceable machinery rather than prose, because a prose-only constraint is
+what allowed `dvpq` through in the first place:
+
+1. `ReasonCode.MIXED_ERA_WINDOW` added to the closed reason-code set.
+2. `source_era` propagated from `fundamentals_quarterly` to
+   `fundamentals_annual`. Era resolution is whole-ticker-year so it collapses
+   to one value; a non-uniform year yields **null** rather than an arbitrary
+   pick, and the metrics layer treats null as mixed.
+3. `TrendMetric.requires_single_era` declares the constraint.
+4. `windows.require_single_era(compute, span)` enforces it, nulling any window
+   that spans more than one era. Missing provenance is refused, never assumed
+   pure.
+
+**Measured coverage cost**, from the rebuilt warehouse:
+
+| as_of | pure 10y windows | mixed |
+|---|---|---|
+| 2021 | 464 | 0 |
+| 2022 | 466 | 0 |
+| **2023** | **140** | 353 |
+| **2024** | **33** | 351 |
+
+Full coverage through FY2022; 28% at FY2023 and **9% at FY2024**. The pure
+windows at 2023 are precisely the legacy-served tickers recovered by era
+resolution (§6.1) -- BA and C keep clean windows where AAPL and KO do not.
+
+**Limit of this fix, stated explicitly.** `require_single_era` solves the
+*window* problem: comparing endpoints the two providers do not measure the
+same way. It does **not** solve the *threshold* problem. A single-year gross
+margin is internally consistent, but the >40% verdict is still
+provider-dependent (13.6% of companies flip), so a FY2022 verdict and a FY2023
+verdict rest on different measurement bases even though each is individually
+pure. Closing that would require pinning to one provider, which was not chosen.
+
+No currently shipped metric sets `requires_single_era`, so this commit changes
+no output. The Stage 2 family slice **must** set it on every gross-margin
+metric. `xsgaq` (0.29) is the complementary side of the same COGS/SG&A split
+and is very likely the same cause, but that has **not** been separately
+verified.
 
 **14 fields remain in CONTRADICTION** and are genuine open items, listed in
 `data/reports/cross_era_reconciliation_2023.csv`. The largest are `dlttq`
