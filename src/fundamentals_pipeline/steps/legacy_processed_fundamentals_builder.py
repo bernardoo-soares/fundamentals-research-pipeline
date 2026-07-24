@@ -161,31 +161,46 @@ def _apply_source_column_overrides(
 
     Applied before `_ensure_stage1_fields` so the canonical name is populated
     from the declared source rather than from a same-named column that means
-    something else. When the source column is absent, the canonical field is
-    set null -- it never falls back to the same-named column.
+    something else. When the (base) source column is absent, the canonical
+    field is set null -- it never falls back to the same-named column.
 
-    A missing source column nulls the canonical field for every row of that
-    file, which is indistinguishable downstream from genuinely absent data, so
-    it is logged rather than applied silently.
+    Every substitution is logged rather than applied silently: a missing base
+    column nulls the field with a warning, and for a summed field a missing
+    secondary component is logged before being treated as zero. Nothing here
+    changes a value without leaving an audit trail.
     """
     for canonical, parts in LEGACY_SOURCE_COLUMN_SUMS.items():
-        if parts[0] not in df.columns:
+        base = parts[0]
+        if base not in df.columns:
             LOG.warning(
                 "Legacy source column %r for canonical %r is absent from %s; "
                 "%r will be null for all %d rows of this file.",
-                parts[0], canonical, source_file or "<unknown file>",
+                base, canonical, source_file or "<unknown file>",
                 canonical, len(df),
             )
             df[canonical] = pd.NA
             continue
-        total = pd.to_numeric(df[parts[0]], errors="coerce")
+        total = pd.to_numeric(df[base], errors="coerce")
         for extra in parts[1:]:
-            addend = (
-                pd.to_numeric(df[extra], errors="coerce")
-                if extra in df.columns
-                else pd.Series(0.0, index=df.index)
-            )
-            total = total + addend.fillna(0.0)
+            if extra in df.columns:
+                # A null in a PRESENT component is a structural zero: the base
+                # column already captures the whole quantity for a company that
+                # reports no separate line. This is the measurement-justified
+                # case (see LEGACY_SOURCE_COLUMN_SUMS): mibtq null-per-row holds
+                # ceqq agreement at 94.0%.
+                total = total + pd.to_numeric(df[extra], errors="coerce").fillna(0.0)
+            else:
+                # A wholly ABSENT component column is a different, unmeasured
+                # case. It is still treated as zero (the base is the dominant
+                # term), but logged rather than applied silently -- mirroring
+                # the base-column branch above and the OVERRIDES loop below, so
+                # the substitution is never invisible in an audit.
+                LOG.warning(
+                    "Legacy summand column %r for canonical %r is absent from "
+                    "%s; treating it as zero for all %d rows (unvalidated when "
+                    "the column is missing entirely rather than null per row).",
+                    extra, canonical, source_file or "<unknown file>", len(df),
+                )
         df[canonical] = total
 
     for canonical, source in LEGACY_SOURCE_COLUMN_OVERRIDES.items():
