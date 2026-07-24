@@ -136,3 +136,16 @@ def test_declared_divergences_never_lower_the_threshold():
     for entry in FIELD_ERA_SEMANTICS:
         if not entry.eras_equivalent:
             assert entry.min_agreement_rate == DEFAULT_MIN_AGREEMENT_RATE
+
+
+def test_cogsq_divergence_warns_about_the_gross_margin_threshold():
+    """cogsq feeds five planned metrics, one with a hard >40% threshold.
+
+    13.6% of companies flip across that line by provider alone (27.7% of
+    those between 30% and 50%), so the declaration must carry the scoring
+    consequence, not just the measurement.
+    """
+    entry = semantics_for("cogsq")
+    assert entry.eras_equivalent is False
+    assert "single era" in entry.divergence_note
+    assert "40%" in entry.divergence_note

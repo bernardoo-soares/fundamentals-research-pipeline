@@ -154,8 +154,31 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
     _equivalent_usd(
         "txtq", "txtq", "Income Tax (Expense) Benefit, Net", "income tax", _FLOW
     ),
-    _equivalent_usd(
-        "cogsq", "cogsq", "Cost of Revenue", "cost of goods sold", _FLOW
+    FieldEraSemantics(
+        field="cogsq",
+        legacy=_usd("cogsq", "Cost of Goods Sold", _FLOW),
+        simfin=_usd("Cost of Revenue", "cost of revenue", _FLOW),
+        eras_equivalent=False,
+        divergence_note=(
+            "The two providers place different operating costs above the "
+            "gross-profit line. Investigated 2026-07-24 on the FY2023 overlap, "
+            "restricted to the 273 companies whose revenue agrees within 1% so "
+            "that COGS composition is the only variable: legacy gross margin is "
+            "systematically HIGHER by a median +2.45pp (80.6% of companies), "
+            "median absolute gap 3.51pp, p90 18.76pp, only 17.6% within 1pp. "
+            "Candidate remappings do not close it: cogsq 12.6% agreement, "
+            "cogsq+dpq 36.6%, cogsq-dpq 2.7%, xoprq-xsgaq 13.7%. The usual "
+            "explanation (Compustat COGS excludes depreciation, reported "
+            "separately in dpq) is PLAUSIBLE BUT UNCONFIRMED here: SimFin's "
+            "income-statement D&A column is only ~40% populated, so the test had "
+            "n=89 and was inconclusive. "
+            "CONSEQUENCE FOR SCORING: gross margin carries a >40% threshold "
+            "(platform spec 6.2), and 13.6% of companies -- 27.7% of those with "
+            "gross margin between 30% and 50% -- flip across that line purely by "
+            "which provider served the row. Any gross-margin metric must be "
+            "restricted to a single era or dropped; it must NOT be computed "
+            "across the 2022/2023 boundary."
+        ),
     ),
     _equivalent_usd(
         "xsgaq",

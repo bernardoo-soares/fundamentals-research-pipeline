@@ -217,9 +217,49 @@ not silencing it: the thresholds are untouched, and a contract test asserts
 that no declared divergence lowers `min_agreement_rate`. **Any future metric
 using `ppentq` or `ivltq` must stay inside a single era.**
 
-**15 fields remain in CONTRADICTION** and are genuine open items, listed in
-`data/reports/cross_era_reconciliation_2023.csv`. The largest are `cogsq`
-(0.14), `dlttq` (0.27), `xsgaq` (0.29), `dlcq` (0.39). These
+### 2.8 `cogsq`: not comparable, and it blocks a scored threshold
+
+Investigated 2026-07-24. Unlike `ppentq`/`ivltq`, `cogsq` **is** needed: it
+feeds five planned metrics (`gross_margin`, `gross_margin_ge40_years_10y`,
+`sga_pct_gross_profit`, `rd_pct_gross_profit`, `dep_pct_gross_profit`).
+
+The two providers place different operating costs above the gross-profit line.
+Restricting to the 273 overlap companies whose revenue agrees within 1%, so
+COGS composition is the only variable:
+
+| statistic | value |
+|---|---|
+| median signed gross-margin gap | **+2.45 pp** (legacy higher) |
+| companies with legacy higher | **80.6%** |
+| median absolute gap | 3.51 pp |
+| p90 absolute gap | 18.76 pp |
+| within 1pp | 17.6% |
+
+No remapping closes it: `cogsq` 12.6%, `cogsq+dpq` 36.6%, `cogsq-dpq` 2.7%,
+`xoprq-xsgaq` 13.7%. The conventional explanation (Compustat COGS excludes
+depreciation, carried separately in `dpq`) is **plausible but unconfirmed**:
+SimFin's income-statement D&A column is only ~40% populated (platform spec
+§3.3), so that test had n=89 and was inconclusive. A capital-intensity
+regression had n=2 and was discarded.
+
+**Why this one blocks work.** Gross margin carries a **>40%** book threshold
+(platform spec §6.2). **13.6%** of companies cross that line depending only on
+which provider served the row -- **27.7%** among those with gross margin
+between 30% and 50%. `gross_margin_ge40_years_10y` counts years over a window
+that spans the boundary, so it would inherit the same failure mode that made
+`retained_earnings_cagr_10y` wrong (§2.6).
+
+`cogsq` is declared `eras_equivalent=False` with the scoring consequence
+recorded in the declaration and asserted by a contract test. **A product
+decision is required before the Stage 2 family slice**: restrict gross-margin
+metrics to a single era, pin them to one provider for the whole history, or
+drop the gross-margin family from the scorecard. `xsgaq` (0.29) is the
+complementary side of the same split and is very likely the same cause, but
+that has **not** been separately verified.
+
+**14 fields remain in CONTRADICTION** and are genuine open items, listed in
+`data/reports/cross_era_reconciliation_2023.csv`. The largest are `dlttq`
+(0.27), `xsgaq` (0.29), `dlcq` (0.39). These
 are unresolved provider definitional differences, **not** silenced: the
 contract forbids lowering a threshold without a written justification, so they
 stay visible until each is investigated. `saleq` (0.869), `cshfdq` (0.868) and
