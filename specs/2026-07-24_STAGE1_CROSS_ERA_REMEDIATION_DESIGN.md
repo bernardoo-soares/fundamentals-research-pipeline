@@ -118,6 +118,7 @@ reconciliation window; it does **not** materially repair the current year.
 | `source_era` populated | every row | **0 nulls**; BA/C/COP/CB/AMT served by legacy, AAPL/KO by SimFin |
 | `value` XOR `reason_code` in `metrics_trend` | holds | **0 both, 0 neither** of 42,557 |
 | `metrics_trend` rows with no matching annual row | 0 | **0** (was 90; era resolution closed the year gaps) |
+| `req` cross-era agreement | >= 0.90 | **0.966** (was 0.217; see §2.6) |
 
 Two defects were found by running the audit against the real corpus, both
 fixed in commit `032c8cf`:
@@ -133,9 +134,52 @@ fixed in commit `032c8cf`:
    `debt_to_equity_adj` adds it back, so the flip computed a different formula
    per era. After the fix, `tstkq` 0.967 and `txtq` 0.937 agreement.
 
-**18 fields remain in CONTRADICTION** and are genuine open items, listed in
+### 2.6 `req` root cause, investigated and fixed
+
+`req` was the worst contradiction that fed a shipped metric, so it was traced
+to root cause rather than deferred.
+
+Compustat publishes two retained-earnings lines: `req` ("Retained Earnings",
+**adjusted**) and `reunaq` ("**Unadjusted** Retained Earnings"). The identity
+`req = reunaq + acomincq` (AOCI) holds within 0.1% for **98.4% of 19,982**
+legacy ticker-years, and AOCI is negative in 66.9% of them. SimFin publishes
+the as-reported line and has **no AOCI column at all**, so the eras could only
+be reconciled on the unadjusted basis. Stage 1 now sources canonical `req`
+from Compustat `reunaq`.
+
+| legacy candidate vs SimFin RE (FY2023 overlap) | agree @1% | median rel. diff |
+|---|---|---|
+| `req` (adjusted) | 23.3% | 0.0427 |
+| **`reunaq` (unadjusted)** | **95.8%** | **0.0000** |
+| `req - acomincq` | 95.6% | 0.0000 |
+
+`reunaq` was chosen over the algebraically equivalent `req - acomincq` despite
+~4pp lower coverage: it is a raw field with an exact semantic match, whereas
+the reconstruction is a derivation, and chaining the two would reintroduce the
+fallback pattern this slice deleted. The shortfall becomes reasoned nulls.
+
+**Impact before the fix.** 76% of tickers at as_of 2023 and 98% at as_of 2024
+cross a provider boundary inside the 10-year window, so
+`retained_earnings_cagr_10y` compared an adjusted start against an unadjusted
+end. Across 249 affected tickers: mean error **+48.6 bps** annualized, 35.3%
+beyond 50 bps, 23.3% beyond 100 bps, and **61% overstated** — a directional
+bias, not noise. The tail was disqualifying:
+
+| Ticker | Reported | True | Error |
+|---|---|---|---|
+| MSI | +28.1% | **-3.8%** | 3192 bps |
+| NTAP | +38.5% | +73.1% | -3455 bps |
+| ZTS | +68.1% | +43.6% | 2454 bps |
+| F | +19.1% | +2.8% | 1630 bps |
+| LMT | +12.8% | +0.8% | 1203 bps |
+
+Motorola Solutions read as compounding retained earnings at 28% a year while
+they were actually shrinking. Post-fix the metric returns the true values, and
+`req` moves to **0.966 agreement** (median relative difference 0.0000).
+
+**17 fields remain in CONTRADICTION** and are genuine open items, listed in
 `data/reports/cross_era_reconciliation_2023.csv`. The largest are `cogsq`
-(0.14), `req` (0.22), `dlttq` (0.27), `ppentq` (0.27), `xsgaq` (0.29). These
+(0.14), `dlttq` (0.27), `ppentq` (0.27), `xsgaq` (0.29). These
 are unresolved provider definitional differences, **not** silenced: the
 contract forbids lowering a threshold without a written justification, so they
 stay visible until each is investigated. `saleq` (0.869), `cshfdq` (0.868) and

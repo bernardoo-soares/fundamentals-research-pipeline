@@ -27,6 +27,20 @@ LEGACY_STAGE1_FIELDS: tuple[str, ...] = (
     *SUPPORT_RAW_FIELDS,
     *EXTENDED_RAW_FIELDS,
 )
+
+# Canonical field -> legacy source column, declared where the two differ.
+# This is a source selection, never a fallback: if the named source column is
+# absent or null, the canonical field is null.
+LEGACY_SOURCE_COLUMN_OVERRIDES: dict[str, str] = {
+    # Compustat `req` is ADJUSTED retained earnings: the identity
+    # `req = reunaq + acomincq` holds within 0.1% for 98.4% of 19,982
+    # legacy ticker-years. SimFin publishes the as-reported line and has no
+    # AOCI column at all, so the only way the two eras can mean the same
+    # thing is to take Compustat's UNADJUSTED column here. Measured on the
+    # FY2023 overlap: `req` agreed 23.3%, `reunaq` agrees 95.8% (median
+    # relative difference 0.0000). See contracts/field_era_semantics.py.
+    "req": "reunaq",
+}
 LEGACY_TICKER_ALIASES: dict[str, tuple[str, ...]] = {
     "GOOG": ("GOOG", "GOOGL"),
     "GOOGL": ("GOOGL", "GOOG"),
@@ -87,6 +101,7 @@ def _legacy_input_columns() -> set[str]:
         "fqtr",
         "tstkq",
         *LEGACY_STAGE1_FIELDS,
+        *LEGACY_SOURCE_COLUMN_OVERRIDES.values(),
     }
 
 
@@ -117,6 +132,22 @@ def _ensure_stage1_fields(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _apply_source_column_overrides(df: pd.DataFrame) -> pd.DataFrame:
+    """Point canonical fields at their declared legacy source column.
+
+    Applied before `_ensure_stage1_fields` so the canonical name is populated
+    from the declared source rather than from a same-named column that means
+    something else. When the source column is absent, the canonical field is
+    set null -- it never falls back to the same-named column.
+    """
+    for canonical, source in LEGACY_SOURCE_COLUMN_OVERRIDES.items():
+        if source in df.columns:
+            df[canonical] = pd.to_numeric(df[source], errors="coerce")
+        else:
+            df[canonical] = pd.NA
+    return df
+
+
 def _prepare_legacy_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure every Stage 1 field exists and is numeric.
 
@@ -133,6 +164,7 @@ def _prepare_legacy_frame(df: pd.DataFrame) -> pd.DataFrame:
     See AGENTS.md S4.2 (no imputation, ever) and
     contracts/field_era_semantics.py for the declared per-era semantics.
     """
+    df = _apply_source_column_overrides(df)
     df = _ensure_stage1_fields(df)
     return _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
 

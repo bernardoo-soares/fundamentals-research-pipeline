@@ -223,8 +223,21 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         "dlcq", "dlcq", "Short Term Debt", "short-term debt", _STOCK
     ),
     _equivalent_usd("dlttq", "dlttq", "Long Term Debt", "long-term debt", _STOCK),
-    _equivalent_usd(
-        "req", "req", "Retained Earnings", "retained earnings", _STOCK
+    FieldEraSemantics(
+        field="req",
+        legacy=_usd("reunaq", "Unadjusted Retained Earnings", _STOCK),
+        simfin=_usd("Retained Earnings", "as-reported retained earnings", _STOCK),
+        eras_equivalent=True,
+        threshold_justification=(
+            "Sourced from Compustat `reunaq`, NOT `req`. Compustat `req` is "
+            "ADJUSTED retained earnings; the identity req = reunaq + acomincq "
+            "holds within 0.1% for 98.4% of 19,982 legacy ticker-years, and "
+            "AOCI is negative in 66.9% of them, so `req` read ~11% low against "
+            "SimFin's as-reported line. SimFin has no AOCI column, so matching "
+            "on the unadjusted basis is the only option. Measured on the FY2023 "
+            "overlap: `req` 23.3% agreement, `reunaq` 95.8% (median relative "
+            "difference 0.0000)."
+        ),
     ),
     _equivalent_usd(
         "tstkq", "tstkq", "Treasury Stock", "treasury stock", _STOCK

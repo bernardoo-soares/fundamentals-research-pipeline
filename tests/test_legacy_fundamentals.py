@@ -405,3 +405,35 @@ def test_present_source_values_are_preserved() -> None:
     result = _prepare_legacy_frame(frame)
     assert result["cshfdq"].iloc[0] == 4500.0
     assert result["saleq"].iloc[0] == 64040.0
+
+
+def test_req_is_sourced_from_unadjusted_retained_earnings() -> None:
+    """Canonical `req` maps to Compustat `reunaq`, not `req`.
+
+    Compustat `req` is ADJUSTED retained earnings (req = reunaq + acomincq).
+    SimFin publishes the as-reported line and has no AOCI column, so matching
+    on the unadjusted basis is the only way the eras can mean the same thing.
+    Measured on the FY2023 overlap: `req` agreed 23.3%, `reunaq` 95.8%.
+    """
+    frame = pd.DataFrame(
+        {
+            "fyearq": [2013],
+            "fqtr": [4],
+            "req": [138.0],       # MSI adjusted (depressed by -2287 AOCI)
+            "reunaq": [2425.0],   # MSI as-reported
+            "acomincq": [-2287.0],
+        }
+    )
+    result = _prepare_legacy_frame(frame)
+    assert result["req"].iloc[0] == 2425.0
+
+
+def test_req_is_null_when_unadjusted_source_missing() -> None:
+    """Never fall back to the adjusted column: that is the defect itself.
+
+    Using the adjusted figure made MSI read +28.1% 10y retained-earnings CAGR
+    when the true figure was -3.8%.
+    """
+    frame = pd.DataFrame({"fyearq": [2013], "fqtr": [4], "req": [138.0]})
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["req"].iloc[0])
