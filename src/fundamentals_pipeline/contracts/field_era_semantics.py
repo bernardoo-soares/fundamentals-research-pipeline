@@ -137,8 +137,19 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
     _equivalent_usd(
         "oiadpq", "oiadpq", "Operating Income (Loss)", "operating income", _FLOW
     ),
-    _equivalent_usd(
-        "xintq", "xintq", "Interest Expense, Net", "net interest expense", _FLOW
+    FieldEraSemantics(
+        field="xintq",
+        legacy=_usd("xintq", "Interest Expense - Total", _FLOW),
+        simfin=_usd("Interest Expense, Net", "interest expense net of income", _FLOW),
+        eras_equivalent=False,
+        divergence_note=(
+            "Legacy is gross interest expense; SimFin is net of interest "
+            "income, and states it with the opposite sign. Measured FY2023: "
+            "89.8% sign-flip rate, magnitude ratio -1.22 (KO legacy 413 vs "
+            "SimFin -146). Not a pure sign fix -- the two are different "
+            "quantities, so interest_pct_operating_income (spec 6.2) must "
+            "carry this caveat when it is built."
+        ),
     ),
     _equivalent_usd(
         "txtq", "txtq", "Income Tax (Expense) Benefit, Net", "income tax", _FLOW

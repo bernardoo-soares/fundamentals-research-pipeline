@@ -729,3 +729,34 @@ def test_simfin_dvpq_is_null_and_dvy_carries_total_dividends(tmp_path) -> None:
     assert pd.isna(aapl["dvpq"])
     # annual "Dividends Paid" -12.0 -> positive spend 12.0 -> published 1.2e-5
     assert aapl["dvy"] == 0.000012
+
+
+def test_simfin_expense_and_contra_equity_signs_match_legacy_convention(tmp_path) -> None:
+    """SimFin states tax and treasury stock negative; Compustat states positive.
+
+    Measured FY2023 before the fix: txtq sign-flip rate 99.1%, tstkq 99.9%,
+    both with magnitude ratio -1.0 (JNJ tstkq legacy 75662 vs SimFin -75662).
+    tstkq matters most: debt_to_equity_adj adds it back, so an era sign flip
+    silently computes a different formula per era.
+    """
+    cache_dir = tmp_path / "simfin_cache"
+    _build_cache(cache_dir)
+
+    universe_path = tmp_path / "universe.csv"
+    pd.DataFrame({"ticker": ["AAPL"]}).to_csv(universe_path, index=False)
+
+    artifacts = build_simfin_raw_fundamentals(
+        universe_path=universe_path,
+        output_dir=tmp_path / "processed",
+        reports_dir=tmp_path / "reports",
+        start_year=2023,
+        end_year=2023,
+        connector=SimfinConnector(data_dir=cache_dir),
+    )
+
+    aapl = pd.read_csv(artifacts["processed_2023"]).iloc[0]
+    # fixture: tax 4.0 and treasury stock 8.0 are stated positive by SimFin
+    # there, so negation yields negative published values -- the point is that
+    # the transform is applied at all, consistently with xsgaq/xrdq.
+    assert aapl["txtq"] == -0.000004
+    assert aapl["tstkq"] == -0.000008

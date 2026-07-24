@@ -186,3 +186,40 @@ def test_cli_exits_nonzero_on_contradiction(monkeypatch, tmp_path):
 def test_load_era_frame_missing_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError, match="Staged Stage 1 file not found"):
         load_era_frame(tmp_path, 2023)
+
+
+def test_ytd_fields_are_compared_at_q4_only():
+    """Legacy YTD accumulates; SimFin broadcasts the annual total.
+
+    Comparing Q1-Q3 would fabricate a contradiction. Only Q4 represents the
+    same full-year quantity in both conventions -- and it is the value
+    annualization consumes.
+    """
+    n = 30
+    key = {
+        "ticker": [f"T{i}" for i in range(n) for _ in range(4)],
+        "year": [2023] * (4 * n),
+        "quarter": [1, 2, 3, 4] * n,
+    }
+    # legacy accumulates to 7952; simfin repeats 7952 in every quarter
+    legacy = pd.DataFrame({**key, "dvy": [101.0, 2089.0, 4078.0, 7952.0] * n})
+    simfin = pd.DataFrame({**key, "dvy": [7952.0] * (4 * n)})
+
+    row = reconcile_frames(legacy, simfin, fields=("dvy",)).iloc[0]
+    assert row["n_compared"] == n  # Q4 rows only, not 4*n
+    assert row["agreement_rate"] == 1.0
+    assert row["verdict"] == Verdict.AGREE
+
+
+def test_point_in_time_fields_use_all_quarters():
+    """Only YTD fields get the Q4 restriction."""
+    n = 30
+    key = {
+        "ticker": [f"T{i}" for i in range(n) for _ in range(4)],
+        "year": [2023] * (4 * n),
+        "quarter": [1, 2, 3, 4] * n,
+    }
+    legacy = pd.DataFrame({**key, "atq": [1.0] * (4 * n)})
+    simfin = pd.DataFrame({**key, "atq": [1.0] * (4 * n)})
+    row = reconcile_frames(legacy, simfin, fields=("atq",)).iloc[0]
+    assert row["n_compared"] == 4 * n

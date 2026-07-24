@@ -336,14 +336,18 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["saleq"] = _numeric_series(frame, "Revenue")
     out["niq"] = _numeric_series(frame, "Net Income")
     out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
-    out["txtq"] = _numeric_series(frame, "Income Tax (Expense) Benefit, Net")
+    # SimFin states tax as a negative expense; Compustat states it positive.
+    out["txtq"] = _positive_expense(frame, "Income Tax (Expense) Benefit, Net")
     out["epspxq"] = _derive_eps(frame)
     out["atq"] = _numeric_series(frame, "Total Assets")
     out["ceqq"] = _numeric_series(frame, "Total Equity")
     out["dlcq"] = _numeric_series(frame, "Short Term Debt")
     out["dlttq"] = _numeric_series(frame, "Long Term Debt")
     out["req"] = _numeric_series(frame, "Retained Earnings")
-    out["tstkq"] = _numeric_series(frame, "Treasury Stock")
+    # SimFin states treasury stock as negative contra-equity; Compustat
+    # states it positive. debt_to_equity_adj adds tstkq back, so an era sign
+    # flip would silently compute a different formula per era.
+    out["tstkq"] = _positive_expense(frame, "Treasury Stock")
     out["oancfq"] = _numeric_series(frame, "Net Cash from Operating Activities")
     out["prstkcq"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity")
     out["capxq"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles")

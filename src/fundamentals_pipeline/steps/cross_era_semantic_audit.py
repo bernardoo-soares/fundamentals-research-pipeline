@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ..contracts.field_era_semantics import declared_fields, semantics_for
+from ..contracts.field_era_semantics import Basis, declared_fields, semantics_for
 from ..contracts.stage1_fundamentals_schema import STAGE1_KEY_COLUMNS
 from ..core.exceptions import CrossEraContradictionError
 
@@ -56,6 +56,27 @@ def _relative_difference(legacy: pd.Series, simfin: pd.Series) -> pd.Series:
     """
     denominator = simfin.abs().where(simfin.abs() > 0)
     return (legacy - simfin).abs() / denominator
+
+
+def _comparable_rows(merged: pd.DataFrame, field: str) -> pd.DataFrame:
+    """Restrict the merged frame to rows on which a field is comparable.
+
+    Year-to-date fields are only comparable at Q4. Legacy states them
+    cumulatively (KO dvy 2023: 101 / 2089 / 4078 / 7952) while SimFin
+    broadcasts the annual total into all four quarters, so Q1-Q3 disagree by
+    construction and would fabricate a contradiction. Q4 is the point where
+    both conventions represent the same full-year quantity -- and it is the
+    value annualization actually consumes.
+    """
+    declaration = semantics_for(field)
+    bases = {
+        source.basis
+        for source in (declaration.legacy, declaration.simfin)
+        if source is not None
+    }
+    if Basis.YEAR_TO_DATE in bases and "quarter" in merged.columns:
+        return merged[merged["quarter"] == 4]
+    return merged
 
 
 def _empty_metrics() -> dict[str, object]:
@@ -146,10 +167,11 @@ def reconcile_frames(
             empty = pd.Series(dtype="float64")
             rows.append(_field_row(empty, empty, field))
             continue
+        comparable = _comparable_rows(merged, field)
         rows.append(
             _field_row(
-                pd.to_numeric(merged[left_column], errors="coerce"),
-                pd.to_numeric(merged[right_column], errors="coerce"),
+                pd.to_numeric(comparable[left_column], errors="coerce"),
+                pd.to_numeric(comparable[right_column], errors="coerce"),
                 field,
             )
         )
