@@ -223,3 +223,30 @@ def test_point_in_time_fields_use_all_quarters():
     simfin = pd.DataFrame({**key, "atq": [1.0] * (4 * n)})
     row = reconcile_frames(legacy, simfin, fields=("atq",)).iloc[0]
     assert row["n_compared"] == 4 * n
+
+
+def test_zero_denominator_rows_count_against_agreement():
+    """Regression: rows where SimFin reports 0 and legacy reports a real
+    value used to be dropped from the rate, so a field could disagree on most
+    of the corpus and still score AGREE."""
+    n = 40
+    key = {"ticker": [f"T{i}" for i in range(n)], "year": [2023] * n, "quarter": [4] * n}
+    # 60% of rows: legacy has a value, SimFin reports exactly zero
+    legacy_vals = [100.0] * 24 + [50.0] * 16
+    simfin_vals = [0.0] * 24 + [50.0] * 16
+    legacy = pd.DataFrame({**key, "dvy": legacy_vals})
+    simfin = pd.DataFrame({**key, "dvy": simfin_vals})
+
+    row = reconcile_frames(legacy, simfin, fields=("dvy",)).iloc[0]
+    assert row["n_compared"] == n
+    assert row["agreement_rate"] == pytest.approx(16 / 40)
+    assert row["verdict"] == Verdict.CONTRADICTION
+
+
+def test_both_zero_counts_as_agreement():
+    n = 40
+    key = {"ticker": [f"T{i}" for i in range(n)], "year": [2023] * n, "quarter": [4] * n}
+    legacy = pd.DataFrame({**key, "dvy": [0.0] * n})
+    simfin = pd.DataFrame({**key, "dvy": [0.0] * n})
+    row = reconcile_frames(legacy, simfin, fields=("dvy",)).iloc[0]
+    assert row["agreement_rate"] == 1.0

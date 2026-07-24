@@ -46,6 +46,17 @@ def _min_present(n: int) -> int:
 
 SOURCE_ERA_COLUMN = "source_era"
 
+# Marker set on a guarded compute function so the registry can verify that a
+# metric declaring `requires_single_era` is actually wrapped. Without this the
+# flag is inert: declaring it would change nothing and the metric would still
+# compute across the provider boundary.
+ERA_GUARD_ATTRIBUTE = "__single_era_guarded__"
+
+
+def is_era_guarded(compute: ComputeFn) -> bool:
+    """Whether a compute function has been wrapped by `require_single_era`."""
+    return bool(getattr(compute, ERA_GUARD_ATTRIBUTE, False))
+
 
 def require_single_era(compute: ComputeFn, span: int) -> ComputeFn:
     """Null any point whose window spans more than one provider era.
@@ -66,32 +77,37 @@ def require_single_era(compute: ComputeFn, span: int) -> ComputeFn:
 
     def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
         points = compute(frame)
+
+        def _blocked(point: MetricPoint) -> MetricPoint:
+            """Relabel only points that still carry a value.
+
+            A point already nulled with `missing_input` or `negative_base`
+            keeps that reason: the more specific diagnosis is the useful one,
+            and overwriting it would attribute genuine data gaps to era mixing
+            in downstream reason-code tallies.
+            """
+            if point.reason_code is not None:
+                return point
+            return MetricPoint(
+                point.as_of_year,
+                None,
+                ReasonCode.MIXED_ERA_WINDOW,
+                point.window_years_present,
+            )
+
         if SOURCE_ERA_COLUMN not in frame.columns:
             # Provenance unavailable: refuse rather than assume purity.
-            return [
-                MetricPoint(
-                    p.as_of_year, None, ReasonCode.MIXED_ERA_WINDOW, p.window_years_present
-                )
-                for p in points
-            ]
+            return [_blocked(point) for point in points]
+
         eras = frame.set_index("fiscal_year").sort_index()[SOURCE_ERA_COLUMN]
         guarded: list[MetricPoint] = []
         for point in points:
             window = eras.loc[point.as_of_year - span : point.as_of_year]
             impure = window.isna().any() or window.dropna().nunique() > 1
-            if impure:
-                guarded.append(
-                    MetricPoint(
-                        point.as_of_year,
-                        None,
-                        ReasonCode.MIXED_ERA_WINDOW,
-                        point.window_years_present,
-                    )
-                )
-            else:
-                guarded.append(point)
+            guarded.append(_blocked(point) if impure else point)
         return guarded
 
+    setattr(_compute, ERA_GUARD_ATTRIBUTE, True)
     return _compute
 
 

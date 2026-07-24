@@ -8,6 +8,7 @@ from .windows import (
     col,
     consistency_fraction_metric,
     count_years_metric,
+    is_era_guarded,
     ratio,
     up_year_fraction_metric,
 )
@@ -67,3 +68,27 @@ REGISTRY: tuple[TrendMetric, ...] = (
         count_years_metric(col("dvy_annual"), 0.0, 10),
     ),
 )
+
+
+def validate_registry(registry: tuple[TrendMetric, ...] = REGISTRY) -> None:
+    """Reject a registry whose declarations do not match its compute functions.
+
+    `requires_single_era` is a declaration; `windows.require_single_era` is the
+    enforcement. If a metric declares the constraint but is not wrapped, the
+    flag would be inert and the metric would silently compute across the
+    provider boundary -- exactly the failure the flag exists to prevent.
+    """
+    seen: set[str] = set()
+    for metric in registry:
+        if metric.metric_id in seen:
+            raise ValueError(f"Duplicate metric_id in registry: {metric.metric_id}")
+        seen.add(metric.metric_id)
+        if metric.requires_single_era and not is_era_guarded(metric.compute):
+            raise ValueError(
+                f"{metric.metric_id}: requires_single_era=True but its compute "
+                "function is not wrapped by windows.require_single_era, so the "
+                "declaration would have no effect."
+            )
+
+
+validate_registry()

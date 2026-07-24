@@ -197,3 +197,22 @@ def test_run_legacy_stage1_audit_writes_reports_and_flags_mismatch(tmp_path) -> 
     assert mismatch_summary["status"] == "fail"
     assert (reconciliation["match_status"] == "mismatch").any()
     assert (review_sample["ticker"] == "AAPL").any()
+
+
+def test_published_columns_with_provenance_are_not_a_mismatch() -> None:
+    """Regression: the audit reads PUBLISHED files, which carry source_era.
+    Comparing them to the builder-only column set flagged every correct file."""
+    from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
+        STAGE1_OUTPUT_COLUMNS,
+        STAGE1_RAW_COLUMNS,
+    )
+    from fundamentals_pipeline.steps.legacy_stage1_output_audit import (
+        check_stage1_columns,
+    )
+
+    published = pd.DataFrame(columns=list(STAGE1_OUTPUT_COLUMNS))
+    staged = pd.DataFrame(columns=list(STAGE1_RAW_COLUMNS))
+    assert check_stage1_columns(published, 2023).empty
+    assert check_stage1_columns(staged, 2023).empty
+    wrong = pd.DataFrame(columns=["ticker", "year", "quarter"])
+    assert not check_stage1_columns(wrong, 2023).empty

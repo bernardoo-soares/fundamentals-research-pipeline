@@ -20,7 +20,10 @@ from ..contracts.stage1_fundamentals_schema import (
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
 )
+from ..core.logging import get_logger
 from ..core.settings import get_settings
+
+LOG = get_logger(__name__)
 
 LEGACY_STAGE1_FIELDS: tuple[str, ...] = (
     *CORE_RAW_FIELDS,
@@ -132,23 +135,44 @@ def _ensure_stage1_fields(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _apply_source_column_overrides(df: pd.DataFrame) -> pd.DataFrame:
+def _apply_source_column_overrides(
+    df: pd.DataFrame,
+    *,
+    source_file: str | None = None,
+) -> pd.DataFrame:
     """Point canonical fields at their declared legacy source column.
 
     Applied before `_ensure_stage1_fields` so the canonical name is populated
     from the declared source rather than from a same-named column that means
     something else. When the source column is absent, the canonical field is
     set null -- it never falls back to the same-named column.
+
+    A missing source column nulls the canonical field for every row of that
+    file, which is indistinguishable downstream from genuinely absent data, so
+    it is logged rather than applied silently.
     """
     for canonical, source in LEGACY_SOURCE_COLUMN_OVERRIDES.items():
         if source in df.columns:
             df[canonical] = pd.to_numeric(df[source], errors="coerce")
-        else:
-            df[canonical] = pd.NA
+            continue
+        LOG.warning(
+            "Legacy source column %r for canonical %r is absent from %s; "
+            "%r will be null for all %d rows of this file.",
+            source,
+            canonical,
+            source_file or "<unknown file>",
+            canonical,
+            len(df),
+        )
+        df[canonical] = pd.NA
     return df
 
 
-def _prepare_legacy_frame(df: pd.DataFrame) -> pd.DataFrame:
+def _prepare_legacy_frame(
+    df: pd.DataFrame,
+    *,
+    source_file: str | None = None,
+) -> pd.DataFrame:
     """Ensure every Stage 1 field exists and is numeric.
 
     Deliberately performs NO substitution. Fields absent from the legacy
@@ -160,11 +184,15 @@ def _prepare_legacy_frame(df: pd.DataFrame) -> pd.DataFrame:
       is flat imputation.
     - `cshfdq` ("Com Shares for Diluted EPS") must never be back-filled from
       `cshoq` ("Common Shares Outstanding") -- a different quantity.
+    - A former `tstkq <- tstkcq` branch was removed as dead code: `tstkcq` is
+      absent from every file in this Compustat extract (verified across 300
+      files), and the branch was gated on `tstkq` being absent, which it never
+      is.
 
     See AGENTS.md S4.2 (no imputation, ever) and
     contracts/field_era_semantics.py for the declared per-era semantics.
     """
-    df = _apply_source_column_overrides(df)
+    df = _apply_source_column_overrides(df, source_file=source_file)
     df = _ensure_stage1_fields(df)
     return _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
 
@@ -181,7 +209,7 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
         df["ticker"] = ticker_fallback
 
     df["source_file"] = path.name
-    df = _prepare_legacy_frame(df)
+    df = _prepare_legacy_frame(df, source_file=path.name)
 
     if "datadate" in df.columns:
         df["period_end"] = pd.to_datetime(df["datadate"], errors="coerce")

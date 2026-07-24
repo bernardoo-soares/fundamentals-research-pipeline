@@ -218,3 +218,57 @@ def test_cli_stage1_resolve_era_invokes_step(monkeypatch, capsys, tmp_path):
 
     assert captured["start_year"] == 2023
     assert "rows_by_era=" in capsys.readouterr().out
+
+
+def test_resolve_refuses_when_no_provider_staged_anything(tmp_path):
+    """Regression: an empty resolve used to overwrite every published year
+    with a header-only CSV and exit 0, destroying Stage 1."""
+    with pytest.raises(FileNotFoundError, match="No staged Stage 1 files found"):
+        resolve_stage1_era(
+            legacy_dir=tmp_path / "absent_legacy",
+            simfin_dir=tmp_path / "absent_simfin",
+            output_dir=tmp_path / "processed",
+            reports_dir=tmp_path / "reports",
+            start_year=2023,
+            end_year=2023,
+        )
+
+
+def test_resolve_does_not_touch_output_when_refusing(tmp_path):
+    """The published files must survive a misconfigured run untouched."""
+    output = tmp_path / "processed"
+    output.mkdir()
+    published = output / "raw_fundamentals_2023.csv"
+    published.write_text("real,data\n1,2\n")
+    with pytest.raises(FileNotFoundError):
+        resolve_stage1_era(
+            legacy_dir=tmp_path / "absent_legacy",
+            simfin_dir=tmp_path / "absent_simfin",
+            output_dir=output,
+            reports_dir=tmp_path / "reports",
+            start_year=2023,
+            end_year=2023,
+        )
+    assert published.read_text() == "real,data\n1,2\n"
+
+
+def test_cli_defaults_chain_builders_into_the_resolver():
+    """Regression: builder output defaults and resolver input defaults must
+    point at the same staging directories, or the documented default sequence
+    silently resolves nothing."""
+    from fundamentals_pipeline.__main__ import _build_parser
+
+    commands = _build_parser()._subparsers._group_actions[0].choices
+
+    def _default(command, dest):
+        return next(a.default for a in commands[command]._actions if a.dest == dest)
+
+    assert _default("legacy-raw-stage1", "output_dir") == _default(
+        "stage1-resolve-era", "legacy_dir"
+    )
+    assert _default("simfin-raw-fundamentals", "output_dir") == _default(
+        "stage1-resolve-era", "simfin_dir"
+    )
+    assert _default("cross-era-audit", "legacy_dir") == _default(
+        "stage1-resolve-era", "legacy_dir"
+    )

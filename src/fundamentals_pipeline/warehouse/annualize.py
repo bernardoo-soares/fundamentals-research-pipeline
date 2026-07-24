@@ -45,9 +45,12 @@ def build_fundamentals_annual(
         "  BOOL_OR(quarter = 4) AS has_q4,\n"
         # Era resolution is whole-ticker-year, so this collapses to one value.
         # A mixed year yields null rather than an arbitrary pick, so the
-        # metrics layer can refuse to compute on it.
-        "  CASE WHEN COUNT(DISTINCT source_era) = 1 THEN MAX(source_era) END\n"
-        "    AS source_era,\n"
+        # metrics layer can refuse to compute on it. COUNT(DISTINCT) ignores
+        # NULLs, so the second condition is required: a year with some
+        # unprovenanced quarters must not be stamped as pure.
+        "  CASE WHEN COUNT(DISTINCT source_era) = 1\n"
+        "         AND COUNT(source_era) = COUNT(*)\n"
+        "       THEN MAX(source_era) END AS source_era,\n"
         "  CAST(now() AS TIMESTAMP) AS computed_at,\n"
         "  ? AS pipeline_version\n"
         "FROM fundamentals_quarterly\n"

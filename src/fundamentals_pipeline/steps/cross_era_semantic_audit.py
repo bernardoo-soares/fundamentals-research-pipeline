@@ -50,12 +50,25 @@ class Verdict(StrEnum):
 
 
 def _relative_difference(legacy: pd.Series, simfin: pd.Series) -> pd.Series:
-    """Elementwise |a-b| / |b|, turning a zero denominator into NaN.
+    """Elementwise |a-b| / |b|, resolving a zero denominator explicitly.
 
-    Guarding rather than dividing keeps inf out of the report entirely.
+    Dropping zero-denominator rows would let a field disagree on most of the
+    corpus and still score as AGREE: if SimFin reports 0 where legacy reports
+    a large value, those rows would vanish from the denominator instead of
+    counting against it. So:
+
+    - both zero  -> 0.0 (they agree)
+    - SimFin zero, legacy non-zero -> infinity (a disagreement at any tolerance)
+
+    Guarding this way keeps every jointly-present row in the rate, so
+    `agreement_rate` and `n_compared` share one denominator.
     """
-    denominator = simfin.abs().where(simfin.abs() > 0)
-    return (legacy - simfin).abs() / denominator
+    difference = (legacy - simfin).abs()
+    denominator = simfin.abs()
+    relative = difference / denominator.where(denominator > 0)
+    both_zero = (denominator == 0) & (legacy.abs() == 0)
+    simfin_zero_only = (denominator == 0) & (legacy.abs() > 0)
+    return relative.mask(both_zero, 0.0).mask(simfin_zero_only, np.inf)
 
 
 def _comparable_rows(merged: pd.DataFrame, field: str) -> pd.DataFrame:

@@ -15,6 +15,13 @@ from enum import StrEnum
 
 MIN_QUARTERS_FOR_COMPLETE_YEAR = 4
 
+# Provider staging directories, relative to the processed-data root. Each
+# builder writes here; only `steps/stage1_era_resolution.py` writes the
+# published CSVs alongside them. Declared once so the builders' output
+# defaults and the resolver's input defaults cannot drift apart.
+LEGACY_STAGING_DIRNAME = "_staging_legacy"
+SIMFIN_STAGING_DIRNAME = "_staging_simfin"
+
 
 class SourceEra(StrEnum):
     """Provider that served a given ticker-year."""
@@ -30,13 +37,20 @@ def resolve_ticker_year_provider(
 ) -> SourceEra | None:
     """Choose the provider for one ticker-year, or None if neither is complete.
 
-    SimFin is preferred wherever it has a complete year. That keeps the SimFin
-    era contiguous for the tickers it covers, so legacy fills only the tickers
-    SimFin lacks and no ticker's series switches provider mid-window.
+    SimFin is preferred wherever it has a complete year, which minimises how
+    often a ticker changes provider: legacy fills only the ticker-years SimFin
+    does not cover completely.
+
+    This reduces mid-series switches but does not eliminate them. A ticker with
+    complete legacy FY2023, incomplete SimFin FY2023, and complete SimFin
+    FY2024 still resolves LEGACY then SIMFIN. Each ticker therefore has its own
+    boundary year, which is why `metrics.windows.require_single_era` checks the
+    per-row `source_era` values rather than assuming a single global cutover.
 
     The rejected alternative -- preferring legacy wherever available -- would
-    have given a ticker legacy FY2023 and SimFin FY2024, relocating the
-    provider discontinuity into the middle of that ticker's series.
+    have produced that switch for the majority of tickers rather than a
+    minority, since legacy covers FY2023 well (463 tickers) but FY2024 barely
+    (33).
 
     Args:
         legacy_quarters: Distinct quarters the legacy extract covers.

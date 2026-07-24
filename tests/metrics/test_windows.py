@@ -150,3 +150,25 @@ def test_require_single_era_span_matches_window_metrics():
     guarded = require_single_era(count_years_metric(col("x"), 0.0, 10), span=9)
     point = next(p for p in guarded(frame) if p.as_of_year == 2023)
     assert point.value is not None  # 2013 is outside the 2014-2023 window
+
+
+def test_require_single_era_preserves_a_more_specific_reason():
+    """Regression: an impure window must not relabel missing_input as
+    mixed_era_window, or reason-code tallies attribute genuine data gaps to
+    era mixing."""
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 10 + ["simfin"],
+        [100.0] * 10 + [float("nan")],  # 2023 endpoint missing
+    )
+    guarded = require_single_era(cagr_metric(col("x"), 10), span=10)
+    point = next(p for p in guarded(frame) if p.as_of_year == 2023)
+    assert point.reason_code == ReasonCode.MISSING_INPUT
+
+
+def test_era_guard_marks_the_compute_function():
+    from fundamentals_pipeline.metrics.windows import is_era_guarded
+
+    plain = cagr_metric(col("x"), 10)
+    assert not is_era_guarded(plain)
+    assert is_era_guarded(require_single_era(plain, span=10))

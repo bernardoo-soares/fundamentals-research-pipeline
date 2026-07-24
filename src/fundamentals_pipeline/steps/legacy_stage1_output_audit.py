@@ -20,6 +20,7 @@ from ..contracts.legacy_stage1_audit_schema import (
 )
 from ..contracts.stage1_fundamentals_schema import (
     STAGE1_KEY_COLUMNS,
+    STAGE1_OUTPUT_COLUMNS,
     STAGE1_RAW_COLUMNS,
 )
 from .legacy_processed_fundamentals_builder import build_legacy_raw_stage1_compare_frame
@@ -93,7 +94,8 @@ def load_stage1_year(path: Path) -> pd.DataFrame:
 
 def check_stage1_columns(frame: pd.DataFrame, year: int) -> pd.DataFrame:
     """Report column-order mismatches against the frozen Stage 1 contract."""
-    if tuple(frame.columns) == STAGE1_RAW_COLUMNS:
+    # Published files carry provenance; builder staging output does not.
+    if tuple(frame.columns) in (STAGE1_OUTPUT_COLUMNS, STAGE1_RAW_COLUMNS):
         return _empty_frame(SCHEMA_ISSUES_COLUMNS)
 
     return pd.DataFrame(
@@ -101,7 +103,7 @@ def check_stage1_columns(frame: pd.DataFrame, year: int) -> pd.DataFrame:
             {
                 "year": year,
                 "issue_type": "column_mismatch",
-                "expected_columns": "|".join(STAGE1_RAW_COLUMNS),
+                "expected_columns": "|".join(STAGE1_OUTPUT_COLUMNS),
                 "observed_columns": "|".join(map(str, frame.columns.tolist())),
                 "detail": "processed file columns differ from Stage 1 contract",
             }
@@ -410,7 +412,7 @@ def run_legacy_stage1_audit(
                         {
                             "year": year,
                             "issue_type": "missing_processed_file",
-                            "expected_columns": "|".join(STAGE1_RAW_COLUMNS),
+                            "expected_columns": "|".join(STAGE1_OUTPUT_COLUMNS),
                             "observed_columns": "",
                             "detail": f"missing processed file: {processed_path}",
                         }

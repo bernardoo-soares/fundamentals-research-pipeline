@@ -5,6 +5,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .contracts.era_resolution import (
+    LEGACY_STAGING_DIRNAME,
+    SIMFIN_STAGING_DIRNAME,
+)
 from .core.exceptions import CrossEraContradictionError
 from .core.logging import configure_logging, get_logger
 from .core.settings import get_settings
@@ -103,7 +107,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     legacy_raw_parser.add_argument(
         "--output-dir",
-        default=str(settings.processed_data_dir),
+        default=str(Path(settings.processed_data_dir) / LEGACY_STAGING_DIRNAME),
+        help="Provider staging directory; stage1-resolve-era publishes from it.",
     )
     legacy_raw_parser.add_argument(
         "--reports-dir",
@@ -122,7 +127,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     simfin_raw_parser.add_argument(
         "--output-dir",
-        default=str(settings.processed_data_dir),
+        default=str(Path(settings.processed_data_dir) / SIMFIN_STAGING_DIRNAME),
+        help="Provider staging directory; stage1-resolve-era publishes from it.",
     )
     simfin_raw_parser.add_argument(
         "--reports-dir",
@@ -193,11 +199,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     era_resolution_parser.add_argument(
         "--legacy-dir",
-        default=str(Path(settings.processed_data_dir) / "_staging_legacy"),
+        default=str(Path(settings.processed_data_dir) / LEGACY_STAGING_DIRNAME),
     )
     era_resolution_parser.add_argument(
         "--simfin-dir",
-        default=str(Path(settings.processed_data_dir) / "_staging_simfin"),
+        default=str(Path(settings.processed_data_dir) / SIMFIN_STAGING_DIRNAME),
     )
     era_resolution_parser.add_argument(
         "--output-dir",
@@ -216,11 +222,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cross_era_audit_parser.add_argument(
         "--legacy-dir",
-        default=str(Path(settings.processed_data_dir) / "_staging_legacy"),
+        default=str(Path(settings.processed_data_dir) / LEGACY_STAGING_DIRNAME),
     )
     cross_era_audit_parser.add_argument(
         "--simfin-dir",
-        default=str(Path(settings.processed_data_dir) / "_staging_simfin"),
+        default=str(Path(settings.processed_data_dir) / SIMFIN_STAGING_DIRNAME),
     )
     cross_era_audit_parser.add_argument(
         "--reports-dir",

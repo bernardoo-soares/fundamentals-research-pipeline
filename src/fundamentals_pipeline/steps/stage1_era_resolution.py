@@ -94,6 +94,16 @@ def resolve_era_frames(
     return resolved, pd.DataFrame(decisions, columns=list(DECISION_COLUMNS))
 
 
+def _staged_years(staging_dir: str | Path, start_year: int, end_year: int) -> list[int]:
+    """Years for which a provider actually staged a file."""
+    directory = Path(staging_dir)
+    return [
+        year
+        for year in range(start_year, end_year + 1)
+        if (directory / f"raw_fundamentals_{year}.csv").exists()
+    ]
+
+
 def _read_staged(staging_dir: str | Path, year: int) -> pd.DataFrame:
     """Read one provider's staged CSV, or an empty frame when absent.
 
@@ -118,6 +128,18 @@ def resolve_stage1_era(
     """Resolve every year in the window and publish the canonical CSVs."""
     if start_year > end_year:
         raise ValueError("start_year must be <= end_year.")
+
+    legacy_staged = _staged_years(legacy_dir, start_year, end_year)
+    simfin_staged = _staged_years(simfin_dir, start_year, end_year)
+    if not legacy_staged and not simfin_staged:
+        # Without this guard an empty resolve overwrites every published year
+        # with a header-only CSV and still exits 0, destroying Stage 1.
+        raise FileNotFoundError(
+            "No staged Stage 1 files found for "
+            f"{start_year}-{end_year} in either provider directory "
+            f"({legacy_dir}, {simfin_dir}). Run the builders first; they write "
+            "into their staging directories, and this step publishes from them."
+        )
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
