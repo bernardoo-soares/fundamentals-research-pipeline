@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from fundamentals_pipeline.contracts.field_era_semantics import (
+    DEFAULT_MIN_AGREEMENT_RATE,
+    FIELD_ERA_SEMANTICS,
     Basis,
     EraSource,
     FieldEraSemantics,
@@ -110,3 +112,27 @@ def test_unknown_field_raises():
 
 def test_declared_fields_returns_names():
     assert "dvy" in declared_fields()
+
+
+def test_taxonomy_boundary_fields_are_declared_not_comparable():
+    """ppentq and ivltq cannot be reconciled by remapping.
+
+    ppentq: SimFin's condensed balance sheet draws the PP&E / Other-Long-Term
+    boundary differently per company. The aggregate reconciles (ppentq+aoq vs
+    SimFin PP&E+OtherLT, 65.7% at median 0.0000) but the split is dispersed
+    (ratio p90/p10 = 2.17), so no alternative column fixes it.
+
+    ivltq: SimFin maps three different concepts by family and leaves the
+    general-family value null or zero for 67.8% of companies.
+    """
+    for field in ("ppentq", "ivltq"):
+        entry = semantics_for(field)
+        assert entry.eras_equivalent is False
+        assert "NOT cross-era comparable" in entry.divergence_note
+
+
+def test_declared_divergences_never_lower_the_threshold():
+    """Divergence is recorded, never hidden by loosening a bound."""
+    for entry in FIELD_ERA_SEMANTICS:
+        if not entry.eras_equivalent:
+            assert entry.min_agreement_rate == DEFAULT_MIN_AGREEMENT_RATE

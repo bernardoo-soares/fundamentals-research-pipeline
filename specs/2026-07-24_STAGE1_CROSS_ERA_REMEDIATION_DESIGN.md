@@ -177,9 +177,49 @@ Motorola Solutions read as compounding retained earnings at 28% a year while
 they were actually shrinking. Post-fix the metric returns the true values, and
 `req` moves to **0.966 agreement** (median relative difference 0.0000).
 
-**17 fields remain in CONTRADICTION** and are genuine open items, listed in
+### 2.7 `ppentq` and `ivltq`: investigated, deprecated as cross-era comparable
+
+Both were investigated with the same method as `req` (§2.6) and reached the
+opposite conclusion: there is no correct column to switch to.
+
+**`ppentq` — taxonomy boundary, not a wrong column.** SimFin uses a condensed
+five-bucket balance sheet and draws the PP&E / Other-Long-Term-Assets boundary
+differently from Compustat, per company. Candidates tested on the FY2023
+overlap:
+
+| candidate | agree @1% | median rel. diff |
+|---|---|---|
+| `ppentq` (net) | 7.4% | 0.197 |
+| `ppegtq` (gross) | 0.0% | 1.388 |
+| `ppegtq - dpactq` | 8.8% | 0.172 |
+| **`ppentq + aoq` vs SimFin `PP&E + Other LT Assets`** | **65.7%** | **0.0000** |
+
+The aggregate reconciles while the split does not, and the ratio is dispersed
+(p10 1.009, p50 1.167, p90 2.194; p90/p10 = 2.17), which rules out a constant
+definitional offset and therefore any fix by remapping. A control on `atq`
+agreed 96.9% at median 0.0000, confirming the unit scale and fiscal alignment
+are sound and the gap is real.
+
+**`ivltq` — three concepts, and barely populated.** SimFin maps a different
+column per family, none of which is Compustat's "Total Long-term Investments":
+general includes *receivables*, banks includes *short-term*, insurance is
+*total* investments. `SIMFIN_STAGE1_MAPPING.md` already recorded the bank and
+insurance mappings as proxies. SimFin's general-family value is null or zero
+for **67.8%** of companies against 18.4% for Compustat; where both exist
+(n=93) agreement is 40.9%. No candidate improves it (`ivaeqq+ivaoq` n=6;
+`+ivstq` 13.6%; `+rectq` 0.9%).
+
+**Decision: deprecate, do not fix.** Neither field is consumed by any metric,
+shipped or planned -- neither appears in the platform spec §6.2 catalog. Both
+are declared `eras_equivalent=False` with the measured evidence, which moves
+them from CONTRADICTION to `divergent_declared`. This is recording the truth,
+not silencing it: the thresholds are untouched, and a contract test asserts
+that no declared divergence lowers `min_agreement_rate`. **Any future metric
+using `ppentq` or `ivltq` must stay inside a single era.**
+
+**15 fields remain in CONTRADICTION** and are genuine open items, listed in
 `data/reports/cross_era_reconciliation_2023.csv`. The largest are `cogsq`
-(0.14), `dlttq` (0.27), `ppentq` (0.27), `xsgaq` (0.29). These
+(0.14), `dlttq` (0.27), `xsgaq` (0.29), `dlcq` (0.39). These
 are unresolved provider definitional differences, **not** silenced: the
 contract forbids lowering a threshold without a written justification, so they
 stay visible until each is investigated. `saleq` (0.869), `cshfdq` (0.868) and

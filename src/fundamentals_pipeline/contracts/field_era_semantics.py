@@ -202,20 +202,48 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
     _equivalent_usd(
         "lctq", "lctq", "Total Current Liabilities", "current liabilities", _STOCK
     ),
-    _equivalent_usd(
-        "ppentq",
-        "ppentq",
-        "Property, Plant & Equipment, Net",
-        "net PP&E",
-        _STOCK,
+    FieldEraSemantics(
+        field="ppentq",
+        legacy=_usd("ppentq", "Property Plant and Equipment - Total (Net)", _STOCK),
+        simfin=_usd("Property, Plant & Equipment, Net", "net PP&E", _STOCK),
+        eras_equivalent=False,
+        divergence_note=(
+            "Both sides say 'net PP&E', but SimFin uses a condensed five-bucket "
+            "balance sheet and draws the PP&E / Other-Long-Term-Assets boundary "
+            "differently from Compustat, per company. Investigated 2026-07-24 on "
+            "the FY2023 overlap: ppentq agrees 7.4% (median 0.197); gross ppegtq "
+            "0.0%; ppegtq-dpactq 8.8%. The AGGREGATE reconciles -- "
+            "ppentq+aoq vs SimFin PP&E+OtherLT agrees 65.7% at median 0.0000 -- "
+            "so the total is conserved and only the split differs. The ratio is "
+            "dispersed (p10 1.009, p50 1.167, p90 2.194; p90/p10 = 2.17), which "
+            "rules out a constant definitional offset and therefore any fix by "
+            "remapping. NOT cross-era comparable: a metric using ppentq must "
+            "stay inside one era."
+        ),
     ),
     _equivalent_usd("gdwlq", "gdwlq", "Goodwill", "goodwill", _STOCK),
-    _equivalent_usd(
-        "ivltq",
-        "ivltq",
-        "Long Term Investments & Receivables",
-        "long-term investments",
-        _STOCK,
+    FieldEraSemantics(
+        field="ivltq",
+        legacy=_usd("ivltq", "Total Long-term Investments", _STOCK),
+        simfin=_usd(
+            "Long Term Investments & Receivables (general) / Short & Long Term "
+            "Investments (banks) / Total Investments (insurance)",
+            "family-dependent investment aggregate",
+            _STOCK,
+        ),
+        eras_equivalent=False,
+        divergence_note=(
+            "SimFin maps three different concepts by family, none of which is "
+            "Compustat's 'Total Long-term Investments': general includes "
+            "RECEIVABLES, banks includes SHORT-term, insurance is TOTAL "
+            "investments. SIMFIN_STAGE1_MAPPING.md already records the bank and "
+            "insurance mappings as proxies. Investigated 2026-07-24 on the "
+            "FY2023 overlap: SimFin's general-family value is null or zero for "
+            "67.8% of companies against 18.4% for Compustat, and where both "
+            "exist (n=93) agreement is 40.9%. No candidate column improves it "
+            "(ivaeqq+ivaoq n=6; +ivstq 13.6%; +rectq 0.9%). NOT cross-era "
+            "comparable: a metric using ivltq must stay inside one era."
+        ),
     ),
     _equivalent_usd("atq", "atq", "Total Assets", "total assets", _STOCK),
     _equivalent_usd("ceqq", "ceqq", "Total Equity", "common equity", _STOCK),
