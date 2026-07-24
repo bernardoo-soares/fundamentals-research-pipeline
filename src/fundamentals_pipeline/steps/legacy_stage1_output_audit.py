@@ -21,6 +21,7 @@ from ..contracts.legacy_stage1_audit_schema import (
 from ..contracts.stage1_fundamentals_schema import (
     STAGE1_KEY_COLUMNS,
     STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
 )
 from .legacy_processed_fundamentals_builder import build_legacy_raw_stage1_compare_frame
 
@@ -52,10 +53,10 @@ def _empty_frame(columns: tuple[str, ...]) -> pd.DataFrame:
 
 def _coerce_stage1_frame(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
-    for column in STAGE1_OUTPUT_COLUMNS:
+    for column in STAGE1_RAW_COLUMNS:
         if column not in out.columns:
             out[column] = pd.NA
-    out = out[list(STAGE1_OUTPUT_COLUMNS)].copy()
+    out = out[list(STAGE1_RAW_COLUMNS)].copy()
     return out.reset_index(drop=True)
 
 
@@ -93,7 +94,8 @@ def load_stage1_year(path: Path) -> pd.DataFrame:
 
 def check_stage1_columns(frame: pd.DataFrame, year: int) -> pd.DataFrame:
     """Report column-order mismatches against the frozen Stage 1 contract."""
-    if tuple(frame.columns) == STAGE1_OUTPUT_COLUMNS:
+    # Published files carry provenance; builder staging output does not.
+    if tuple(frame.columns) in (STAGE1_OUTPUT_COLUMNS, STAGE1_RAW_COLUMNS):
         return _empty_frame(SCHEMA_ISSUES_COLUMNS)
 
     return pd.DataFrame(
@@ -160,7 +162,7 @@ def build_field_nulls_report(frame: pd.DataFrame, year: int) -> pd.DataFrame:
     """Build per-field null counts for one processed Stage 1 year."""
     rows: list[dict[str, Any]] = []
     total_rows = int(len(frame))
-    for field_name in STAGE1_OUTPUT_COLUMNS[len(STAGE1_KEY_COLUMNS) :]:
+    for field_name in STAGE1_RAW_COLUMNS[len(STAGE1_KEY_COLUMNS) :]:
         null_rows = int(frame[field_name].isna().sum()) if total_rows else 0
         null_pct = round((null_rows / total_rows) * 100.0, 6) if total_rows else 0.0
         rows.append(
@@ -196,7 +198,7 @@ def reconcile_processed_vs_expected(
     year: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compare processed Stage 1 values against reconstructed expected values."""
-    compare_fields = list(STAGE1_OUTPUT_COLUMNS[len(STAGE1_KEY_COLUMNS) :])
+    compare_fields = list(STAGE1_RAW_COLUMNS[len(STAGE1_KEY_COLUMNS) :])
     merged = processed.merge(
         expected,
         on=list(STAGE1_KEY_COLUMNS),
@@ -403,7 +405,7 @@ def run_legacy_stage1_audit(
                 )
             )
         else:
-            raw_processed = pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+            raw_processed = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
             schema_issue_frames.append(
                 pd.DataFrame(
                     [

@@ -45,6 +45,7 @@ def _fundamentals_annual_ddl() -> str:
         f"  {value_cols},\n"
         "  quarters_present INTEGER,\n"
         "  has_q4 BOOLEAN,\n"
+        "  source_era VARCHAR,\n"
         "  computed_at TIMESTAMP,\n"
         "  pipeline_version VARCHAR,\n"
         "  PRIMARY KEY (ticker, fiscal_year)\n"

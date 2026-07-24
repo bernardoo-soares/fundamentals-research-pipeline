@@ -11,7 +11,7 @@ from ..contracts.simfin_aliases import SIMFIN_TICKER_ALIASES
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
-    STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
 )
@@ -69,6 +69,7 @@ SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
     "Net Cash from Operating Activities": "Net Cash from Operating Activities__annual",
     "Change in Fixed Assets & Intangibles": "Change in Fixed Assets & Intangibles__annual",
     "Cash from (Repurchase of) Equity": "Cash from (Repurchase of) Equity__annual",
+    "Dividends Paid": "Dividends Paid__annual",
 }
 SIMFIN_CASHFLOW_DA_COLUMN = "Depreciation & Amortization__cashflow"
 
@@ -322,7 +323,7 @@ def _derive_eps(frame: pd.DataFrame) -> pd.Series:
 def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame:
     """Map one SimFin family frame into the raw fundamentals contract."""
     if frame.empty:
-        return pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"])
+        return pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"])
 
     out = pd.DataFrame(
         {
@@ -335,19 +336,26 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["saleq"] = _numeric_series(frame, "Revenue")
     out["niq"] = _numeric_series(frame, "Net Income")
     out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
-    out["txtq"] = _numeric_series(frame, "Income Tax (Expense) Benefit, Net")
+    # SimFin states tax as a negative expense; Compustat states it positive.
+    out["txtq"] = _positive_expense(frame, "Income Tax (Expense) Benefit, Net")
     out["epspxq"] = _derive_eps(frame)
     out["atq"] = _numeric_series(frame, "Total Assets")
     out["ceqq"] = _numeric_series(frame, "Total Equity")
     out["dlcq"] = _numeric_series(frame, "Short Term Debt")
     out["dlttq"] = _numeric_series(frame, "Long Term Debt")
     out["req"] = _numeric_series(frame, "Retained Earnings")
-    out["tstkq"] = _numeric_series(frame, "Treasury Stock")
+    # SimFin states treasury stock as negative contra-equity; Compustat
+    # states it positive. debt_to_equity_adj adds tstkq back, so an era sign
+    # flip would silently compute a different formula per era.
+    out["tstkq"] = _positive_expense(frame, "Treasury Stock")
     out["oancfq"] = _numeric_series(frame, "Net Cash from Operating Activities")
     out["prstkcq"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity")
     out["capxq"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles")
     out["cheq"] = _numeric_series(frame, "Cash, Cash Equivalents & Short Term Investments")
-    out["dvpq"] = _positive_outflow(frame, "Dividends Paid")
+    # dvpq is PREFERRED dividends by the Compustat definition. SimFin
+    # publishes no preferred-dividend column, so this is null in the SimFin
+    # era; total dividends are carried by `dvy` from the annual cashflow.
+    out["dvpq"] = _empty_numeric_series(frame)
     out["cshfdq"] = _numeric_series(frame, "Shares (Diluted)")
     out["cshoq"] = _numeric_series(frame, "Shares (Basic)")
 
@@ -390,13 +398,14 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["oancfy"] = _numeric_series(frame, "Net Cash from Operating Activities__annual")
     out["capxy"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles__annual")
     out["prstkcy"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity__annual")
+    out["dvy"] = _positive_outflow(frame, "Dividends Paid__annual")
     out["cshopq"] = _empty_numeric_series(frame)
     out["ltq"] = _numeric_series(frame, "Total Liabilities")
     out["rectq"] = _numeric_series(frame, "Accounts & Notes Receivable")
     out["dpq"] = _numeric_series(frame, SIMFIN_CASHFLOW_DA_COLUMN)
     out["source_family"] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)
-    return out[[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"]]
+    return out[[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"]]
 
 
 def _select_best_family_rows(
@@ -404,7 +413,7 @@ def _select_best_family_rows(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Select the strongest family candidate per ticker-year-quarter."""
     if candidates.empty:
-        empty = pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family"])
+        empty = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family"])
         return empty, pd.DataFrame(columns=SIMFIN_CONFLICT_COLUMNS)
 
     ranked = candidates.copy()
@@ -425,7 +434,7 @@ def _select_best_family_rows(
         ].reset_index(drop=True)
 
     selected = ranked.drop_duplicates(subset=key, keep="first").reset_index(drop=True)
-    return selected[[*STAGE1_OUTPUT_COLUMNS, "source_family"]], conflicts
+    return selected[[*STAGE1_RAW_COLUMNS, "source_family"]], conflicts
 
 
 def _write_year_partitions(
@@ -440,10 +449,10 @@ def _write_year_partitions(
     for year in range(start_year, end_year + 1):
         year_path = output_dir / f"raw_fundamentals_{year}.csv"
         year_df = frame[frame["year"] == year].copy() if not frame.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         if year_df.empty:
-            year_df = pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+            year_df = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
         year_df.to_csv(year_path, index=False)
         artifacts[f"processed_{year}"] = str(year_path)
     return artifacts
@@ -460,7 +469,7 @@ def _build_coverage(
     rows: list[dict[str, int]] = []
     for year in range(start_year, end_year + 1):
         year_df = frame[frame["year"] == year].copy() if not frame.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         quarter_counts = (
             year_df.groupby("ticker")["quarter"].nunique()
@@ -663,7 +672,7 @@ def build_simfin_raw_fundamentals(
     if nonempty_candidates:
         candidates = pd.concat(nonempty_candidates, ignore_index=True)
     else:
-        candidates = pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"])
+        candidates = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"])
     selected, conflicts = _select_best_family_rows(candidates)
     selected = _expand_requested_ticker_rows(
         selected,
@@ -675,11 +684,11 @@ def build_simfin_raw_fundamentals(
         source_system="simfin",
     )
     validate_stage1_frame_columns(
-        normalized_selected.columns[: len(STAGE1_OUTPUT_COLUMNS)].tolist()
+        normalized_selected.columns[: len(STAGE1_RAW_COLUMNS)].tolist()
     )
 
     year_outputs = _write_year_partitions(
-        normalized_selected[list(STAGE1_OUTPUT_COLUMNS)],
+        normalized_selected[list(STAGE1_RAW_COLUMNS)],
         output_dir=resolved_output_dir,
         start_year=start_year,
         end_year=end_year,

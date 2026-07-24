@@ -26,6 +26,9 @@ def test_reason_codes_closed_set() -> None:
         "not_applicable_sector",
         "insufficient_history",
         "tstk_unavailable",
+        # window spans more than one provider era, so the inputs at the two
+        # ends are not the same quantity (see field_era_semantics.py)
+        "mixed_era_window",
     } == set(REASON_CODES)
 
 

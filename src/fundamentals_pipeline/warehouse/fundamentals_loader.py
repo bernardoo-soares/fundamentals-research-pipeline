@@ -11,8 +11,6 @@ import pandas as pd
 from ..contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
 from .schema import QUARTERLY_RAW_FIELDS
 
-_LEGACY_MAX_YEAR = 2022
-
 _INSERT_COLUMNS = (
     "ticker",
     "year",
@@ -63,9 +61,9 @@ def load_fundamentals_quarterly(
             raise FileNotFoundError(f"Stage 1 file not found: {path}")
         frame = pd.read_csv(path)
         _validate_columns(frame, path)
-        frame["source_era"] = (
-            "legacy_compustat" if year <= _LEGACY_MAX_YEAR else "simfin"
-        )
+        # `source_era` is published by steps/stage1_era_resolution.py. The
+        # loader reads the recorded provenance rather than inferring it from
+        # the year, which is what discarded usable legacy data for FY2023.
         frames.append(frame)
 
     combined = pd.concat(frames, ignore_index=True)

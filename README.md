@@ -90,6 +90,22 @@ python -m fundamentals_pipeline legacy-stage1-audit `
   --end-year 2023
 ```
 
+Publish Stage 1 by resolving the two providers, then verify the result.
+
+The builders write into their own staging directories
+(`data/processed/_staging_legacy`, `_staging_simfin`); this step chooses a
+provider per ticker-year, stamps `source_era`, and writes the published
+`data/processed/raw_fundamentals_<year>.csv` that the warehouse loads. It must
+run **before** `warehouse-rebuild`, which requires the `source_era` column.
+
+```powershell
+python -m fundamentals_pipeline stage1-resolve-era --start-year 2006 --end-year 2025
+python -m fundamentals_pipeline cross-era-audit --year 2023
+```
+
+`cross-era-audit` exits non-zero if measured data contradicts a declared
+cross-era equivalence in `contracts/field_era_semantics.py`.
+
 Rebuild the DuckDB analytical warehouse:
 
 ```powershell

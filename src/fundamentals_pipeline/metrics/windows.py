@@ -44,6 +44,73 @@ def _min_present(n: int) -> int:
     return math.ceil(0.8 * n)
 
 
+SOURCE_ERA_COLUMN = "source_era"
+
+# Marker set on a guarded compute function so the registry can verify that a
+# metric declaring `requires_single_era` is actually wrapped. Without this the
+# flag is inert: declaring it would change nothing and the metric would still
+# compute across the provider boundary.
+ERA_GUARD_ATTRIBUTE = "__single_era_guarded__"
+
+
+def is_era_guarded(compute: ComputeFn) -> bool:
+    """Whether a compute function has been wrapped by `require_single_era`."""
+    return bool(getattr(compute, ERA_GUARD_ATTRIBUTE, False))
+
+
+def require_single_era(compute: ComputeFn, span: int) -> ComputeFn:
+    """Null any point whose window spans more than one provider era.
+
+    For fields the two providers do not measure the same way -- declared
+    `eras_equivalent=False` in `contracts/field_era_semantics.py` -- a window
+    crossing the boundary compares incomparable quantities. `cogsq` is the
+    motivating case: 13.6% of companies cross the >40% gross-margin threshold
+    purely by which provider served the row.
+
+    `span` is the number of years before `as_of` that the window covers, so a
+    CAGR over N years passes `span=N` (endpoints N apart) and an N-year window
+    metric passes `span=N-1`.
+
+    A null `source_era` marks a ticker-year whose provider was not uniform, and
+    is treated as mixed rather than trusted.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        points = compute(frame)
+
+        def _blocked(point: MetricPoint) -> MetricPoint:
+            """Relabel only points that still carry a value.
+
+            A point already nulled with `missing_input` or `negative_base`
+            keeps that reason: the more specific diagnosis is the useful one,
+            and overwriting it would attribute genuine data gaps to era mixing
+            in downstream reason-code tallies.
+            """
+            if point.reason_code is not None:
+                return point
+            return MetricPoint(
+                point.as_of_year,
+                None,
+                ReasonCode.MIXED_ERA_WINDOW,
+                point.window_years_present,
+            )
+
+        if SOURCE_ERA_COLUMN not in frame.columns:
+            # Provenance unavailable: refuse rather than assume purity.
+            return [_blocked(point) for point in points]
+
+        eras = frame.set_index("fiscal_year").sort_index()[SOURCE_ERA_COLUMN]
+        guarded: list[MetricPoint] = []
+        for point in points:
+            window = eras.loc[point.as_of_year - span : point.as_of_year]
+            impure = window.isna().any() or window.dropna().nunique() > 1
+            guarded.append(_blocked(point) if impure else point)
+        return guarded
+
+    setattr(_compute, ERA_GUARD_ATTRIBUTE, True)
+    return _compute
+
+
 def cagr_metric(series_fn: SeriesFn, n: int) -> ComputeFn:
     """CAGR over n years using the two endpoints (spec 6.1.2)."""
 

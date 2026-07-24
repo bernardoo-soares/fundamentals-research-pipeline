@@ -11,6 +11,7 @@ from fundamentals_pipeline.metrics.windows import (
     consistency_fraction_metric,
     count_years_metric,
     ratio,
+    require_single_era,
     up_year_fraction_metric,
 )
 
@@ -85,3 +86,89 @@ def test_ratio_series_guards_zero_denominator() -> None:
     s = ratio("n", "d")(frame)
     assert pd.isna(s.loc[2021])       # den 0 -> NaN (not present)
     assert math.isclose(s.loc[2022], 0.2, rel_tol=1e-9)
+
+
+def _era_frame(years, eras, values):
+    return pd.DataFrame(
+        {"fiscal_year": years, "source_era": eras, "x": values}
+    )
+
+
+def test_require_single_era_allows_a_pure_window():
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 11,
+        [100.0 * (1.1**i) for i in range(11)],
+    )
+    guarded = require_single_era(cagr_metric(col("x"), 10), span=10)
+    point = next(p for p in guarded(frame) if p.as_of_year == 2023)
+    assert point.value is not None
+    assert point.reason_code is None
+
+
+def test_require_single_era_nulls_a_boundary_crossing_window():
+    """cogsq-class fields: 13.6% of companies flip the 40% gross-margin
+    threshold purely by provider, so a crossing window is not computable."""
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 10 + ["simfin"],
+        [100.0 * (1.1**i) for i in range(11)],
+    )
+    guarded = require_single_era(cagr_metric(col("x"), 10), span=10)
+    point = next(p for p in guarded(frame) if p.as_of_year == 2023)
+    assert point.value is None
+    assert point.reason_code == ReasonCode.MIXED_ERA_WINDOW
+
+
+def test_require_single_era_refuses_when_provenance_is_missing():
+    """Absent provenance is never assumed pure."""
+    frame = pd.DataFrame(
+        {"fiscal_year": list(range(2013, 2024)), "x": [100.0] * 11}
+    )
+    guarded = require_single_era(cagr_metric(col("x"), 10), span=10)
+    assert all(p.reason_code == ReasonCode.MIXED_ERA_WINDOW for p in guarded(frame))
+
+
+def test_require_single_era_treats_null_era_as_mixed():
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 5 + [None] + ["legacy_compustat"] * 5,
+        [100.0] * 11,
+    )
+    guarded = require_single_era(cagr_metric(col("x"), 10), span=10)
+    point = next(p for p in guarded(frame) if p.as_of_year == 2023)
+    assert point.reason_code == ReasonCode.MIXED_ERA_WINDOW
+
+
+def test_require_single_era_span_matches_window_metrics():
+    """A 10-year window metric passes span=9, so 2014-2023 is the window."""
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["simfin"] + ["legacy_compustat"] * 10,  # only 2013 differs
+        [1.0] * 11,
+    )
+    guarded = require_single_era(count_years_metric(col("x"), 0.0, 10), span=9)
+    point = next(p for p in guarded(frame) if p.as_of_year == 2023)
+    assert point.value is not None  # 2013 is outside the 2014-2023 window
+
+
+def test_require_single_era_preserves_a_more_specific_reason():
+    """Regression: an impure window must not relabel missing_input as
+    mixed_era_window, or reason-code tallies attribute genuine data gaps to
+    era mixing."""
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 10 + ["simfin"],
+        [100.0] * 10 + [float("nan")],  # 2023 endpoint missing
+    )
+    guarded = require_single_era(cagr_metric(col("x"), 10), span=10)
+    point = next(p for p in guarded(frame) if p.as_of_year == 2023)
+    assert point.reason_code == ReasonCode.MISSING_INPUT
+
+
+def test_era_guard_marks_the_compute_function():
+    from fundamentals_pipeline.metrics.windows import is_era_guarded
+
+    plain = cagr_metric(col("x"), 10)
+    assert not is_era_guarded(plain)
+    assert is_era_guarded(require_single_era(plain, span=10))

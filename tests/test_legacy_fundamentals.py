@@ -3,8 +3,9 @@ from __future__ import annotations
 import pandas as pd
 
 from fundamentals_pipeline import __main__ as cli
-from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_RAW_COLUMNS
 from fundamentals_pipeline.steps.legacy_processed_fundamentals_builder import (
+    _prepare_legacy_frame,
     build_legacy_fundamentals,
     build_legacy_raw_stage1,
 )
@@ -141,7 +142,7 @@ def test_build_legacy_raw_stage1_writes_yearly_raw_only_outputs_and_reports(tmp_
     )
 
     year_df = pd.read_csv(artifacts["processed_2024"])
-    assert tuple(year_df.columns) == STAGE1_OUTPUT_COLUMNS
+    assert tuple(year_df.columns) == STAGE1_RAW_COLUMNS
     assert len(year_df) == 4
     assert "Operating_Margin" not in year_df.columns
 
@@ -358,3 +359,81 @@ def test_workflow_run_legacy_raw_stage1_window_invokes_step(monkeypatch) -> None
     assert artifacts["processed_2023"] == "data/processed/raw_fundamentals_2023.csv"
     assert captured["start_year"] == 2023
     assert captured["end_year"] == 2023
+
+
+def test_prstkcq_is_null_when_source_lacks_it() -> None:
+    """Regression: prstkcq was filled from cshopq, a SHARE COUNT.
+
+    Compustat publishes no quarterly purchase-of-stock column at all
+    ("prstkcq" is absent from the extract), so the honest value is null.
+    Real AAPL FY2019 Q1: cshopq 38.024 shares vs the actual 10114 dollars
+    of YTD buyback. Pins the unit defect closed.
+    """
+    frame = pd.DataFrame(
+        {"fyearq": [2019], "fqtr": [1], "cshopq": [38.024], "prstkcy": [10114.0]}
+    )
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["prstkcq"].iloc[0])
+
+
+def test_prstkcq_is_not_derived_from_quartered_prstkcy() -> None:
+    """Regression: prstkcq was filled with prstkcy / 4 -- flat imputation."""
+    frame = pd.DataFrame(
+        {"fyearq": [2019], "fqtr": [1], "cshopq": [None], "prstkcy": [10114.0]}
+    )
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["prstkcq"].iloc[0])
+
+
+def test_cshfdq_is_null_when_source_lacks_it() -> None:
+    """Regression: cshfdq was filled from cshoq.
+
+    Compustat defines cshfdq as "Com Shares for Diluted EPS" and cshoq as
+    "Common Shares Outstanding" -- different quantities, materially so for
+    companies with significant options or convertibles.
+    """
+    frame = pd.DataFrame({"fyearq": [2019], "fqtr": [1], "cshoq": [4443.236]})
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["cshfdq"].iloc[0])
+
+
+def test_present_source_values_are_preserved() -> None:
+    """Removing fallbacks must not disturb genuinely present values."""
+    frame = pd.DataFrame(
+        {"fyearq": [2019], "fqtr": [1], "cshfdq": [4500.0], "saleq": [64040.0]}
+    )
+    result = _prepare_legacy_frame(frame)
+    assert result["cshfdq"].iloc[0] == 4500.0
+    assert result["saleq"].iloc[0] == 64040.0
+
+
+def test_req_is_sourced_from_unadjusted_retained_earnings() -> None:
+    """Canonical `req` maps to Compustat `reunaq`, not `req`.
+
+    Compustat `req` is ADJUSTED retained earnings (req = reunaq + acomincq).
+    SimFin publishes the as-reported line and has no AOCI column, so matching
+    on the unadjusted basis is the only way the eras can mean the same thing.
+    Measured on the FY2023 overlap: `req` agreed 23.3%, `reunaq` 95.8%.
+    """
+    frame = pd.DataFrame(
+        {
+            "fyearq": [2013],
+            "fqtr": [4],
+            "req": [138.0],       # MSI adjusted (depressed by -2287 AOCI)
+            "reunaq": [2425.0],   # MSI as-reported
+            "acomincq": [-2287.0],
+        }
+    )
+    result = _prepare_legacy_frame(frame)
+    assert result["req"].iloc[0] == 2425.0
+
+
+def test_req_is_null_when_unadjusted_source_missing() -> None:
+    """Never fall back to the adjusted column: that is the defect itself.
+
+    Using the adjusted figure made MSI read +28.1% 10y retained-earnings CAGR
+    when the true figure was -3.8%.
+    """
+    frame = pd.DataFrame({"fyearq": [2013], "fqtr": [4], "req": [138.0]})
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["req"].iloc[0])

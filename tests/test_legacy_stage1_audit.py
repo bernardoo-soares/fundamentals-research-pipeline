@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_RAW_COLUMNS
 from fundamentals_pipeline.steps.legacy_stage1_output_audit import (
     build_field_nulls_report,
     build_review_sample,
@@ -58,7 +58,7 @@ def _legacy_row(
 
 
 def _stage1_row(ticker: str, year: int, quarter: int, saleq: float) -> dict[str, object]:
-    row = {column: pd.NA for column in STAGE1_OUTPUT_COLUMNS}
+    row = {column: pd.NA for column in STAGE1_RAW_COLUMNS}
     row["ticker"] = ticker
     row["year"] = year
     row["quarter"] = quarter
@@ -173,7 +173,7 @@ def test_run_legacy_stage1_audit_writes_reports_and_flags_mismatch(tmp_path) -> 
             _stage1_row("AAPL", 2024, 1, 999.0),
             _stage1_row("AAPL", 2024, 2, 110.0),
         ],
-        columns=STAGE1_OUTPUT_COLUMNS,
+        columns=STAGE1_RAW_COLUMNS,
     )
     processed.to_csv(processed_dir / "raw_fundamentals_2024.csv", index=False)
 
@@ -197,3 +197,22 @@ def test_run_legacy_stage1_audit_writes_reports_and_flags_mismatch(tmp_path) -> 
     assert mismatch_summary["status"] == "fail"
     assert (reconciliation["match_status"] == "mismatch").any()
     assert (review_sample["ticker"] == "AAPL").any()
+
+
+def test_published_columns_with_provenance_are_not_a_mismatch() -> None:
+    """Regression: the audit reads PUBLISHED files, which carry source_era.
+    Comparing them to the builder-only column set flagged every correct file."""
+    from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
+        STAGE1_OUTPUT_COLUMNS,
+        STAGE1_RAW_COLUMNS,
+    )
+    from fundamentals_pipeline.steps.legacy_stage1_output_audit import (
+        check_stage1_columns,
+    )
+
+    published = pd.DataFrame(columns=list(STAGE1_OUTPUT_COLUMNS))
+    staged = pd.DataFrame(columns=list(STAGE1_RAW_COLUMNS))
+    assert check_stage1_columns(published, 2023).empty
+    assert check_stage1_columns(staged, 2023).empty
+    wrong = pd.DataFrame(columns=["ticker", "year", "quarter"])
+    assert not check_stage1_columns(wrong, 2023).empty

@@ -186,3 +186,9 @@ These may be useful later, but they require an explicit market-price input and a
 2. The computed layer should be reproducible from the raw layer.
 3. Source choice must not change the meaning of the canonical fields.
 4. The yearly CSV contract should remain stable across all years.
+
+## Source-column notes (2026-07-24)
+
+1. Canonical `req` is sourced from Compustat **`reunaq`** (Unadjusted Retained Earnings), not `req`. Compustat `req` is adjusted (`req = reunaq + acomincq`); SimFin publishes the as-reported line and has no AOCI column. See `contracts/field_era_semantics.py`.
+2. Canonical `dvy` is total cash dividends (YTD); `dvpq` is preferred dividends only and is null in the SimFin era.
+3. Canonical `prstkcq` is null across the legacy era: Compustat publishes no quarterly purchase-of-stock column.

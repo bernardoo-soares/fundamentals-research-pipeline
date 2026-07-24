@@ -16,17 +16,34 @@ import pandas as pd
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
-    STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
 )
+from ..core.logging import get_logger
 from ..core.settings import get_settings
+
+LOG = get_logger(__name__)
 
 LEGACY_STAGE1_FIELDS: tuple[str, ...] = (
     *CORE_RAW_FIELDS,
     *SUPPORT_RAW_FIELDS,
     *EXTENDED_RAW_FIELDS,
 )
+
+# Canonical field -> legacy source column, declared where the two differ.
+# This is a source selection, never a fallback: if the named source column is
+# absent or null, the canonical field is null.
+LEGACY_SOURCE_COLUMN_OVERRIDES: dict[str, str] = {
+    # Compustat `req` is ADJUSTED retained earnings: the identity
+    # `req = reunaq + acomincq` holds within 0.1% for 98.4% of 19,982
+    # legacy ticker-years. SimFin publishes the as-reported line and has no
+    # AOCI column at all, so the only way the two eras can mean the same
+    # thing is to take Compustat's UNADJUSTED column here. Measured on the
+    # FY2023 overlap: `req` agreed 23.3%, `reunaq` agrees 95.8% (median
+    # relative difference 0.0000). See contracts/field_era_semantics.py.
+    "req": "reunaq",
+}
 LEGACY_TICKER_ALIASES: dict[str, tuple[str, ...]] = {
     "GOOG": ("GOOG", "GOOGL"),
     "GOOGL": ("GOOGL", "GOOG"),
@@ -85,9 +102,9 @@ def _legacy_input_columns() -> set[str]:
         "datadate",
         "fyearq",
         "fqtr",
-        "tstkcq",
         "tstkq",
         *LEGACY_STAGE1_FIELDS,
+        *LEGACY_SOURCE_COLUMN_OVERRIDES.values(),
     }
 
 
@@ -118,23 +135,66 @@ def _ensure_stage1_fields(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _derive_support_fallbacks(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply explicit fallback rules for sparse legacy raw fields."""
-    if "tstkq" not in df.columns and "tstkcq" in df.columns:
-        df["tstkq"] = pd.to_numeric(df["tstkcq"], errors="coerce")
+def _apply_source_column_overrides(
+    df: pd.DataFrame,
+    *,
+    source_file: str | None = None,
+) -> pd.DataFrame:
+    """Point canonical fields at their declared legacy source column.
 
-    df = _ensure_stage1_fields(df)
-    df = _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
+    Applied before `_ensure_stage1_fields` so the canonical name is populated
+    from the declared source rather than from a same-named column that means
+    something else. When the source column is absent, the canonical field is
+    set null -- it never falls back to the same-named column.
 
-    prstkcq = pd.to_numeric(df["prstkcq"], errors="coerce")
-    prstkcq = prstkcq.fillna(pd.to_numeric(df["cshopq"], errors="coerce"))
-    prstkcq = prstkcq.fillna(pd.to_numeric(df["prstkcy"], errors="coerce") / 4.0)
-    df["prstkcq"] = prstkcq
-
-    cshfdq = pd.to_numeric(df["cshfdq"], errors="coerce")
-    cshfdq = cshfdq.fillna(pd.to_numeric(df["cshoq"], errors="coerce"))
-    df["cshfdq"] = cshfdq
+    A missing source column nulls the canonical field for every row of that
+    file, which is indistinguishable downstream from genuinely absent data, so
+    it is logged rather than applied silently.
+    """
+    for canonical, source in LEGACY_SOURCE_COLUMN_OVERRIDES.items():
+        if source in df.columns:
+            df[canonical] = pd.to_numeric(df[source], errors="coerce")
+            continue
+        LOG.warning(
+            "Legacy source column %r for canonical %r is absent from %s; "
+            "%r will be null for all %d rows of this file.",
+            source,
+            canonical,
+            source_file or "<unknown file>",
+            canonical,
+            len(df),
+        )
+        df[canonical] = pd.NA
     return df
+
+
+def _prepare_legacy_frame(
+    df: pd.DataFrame,
+    *,
+    source_file: str | None = None,
+) -> pd.DataFrame:
+    """Ensure every Stage 1 field exists and is numeric.
+
+    Deliberately performs NO substitution. Fields absent from the legacy
+    extract stay null:
+
+    - `prstkcq` has no Compustat quarterly column at all; it was previously
+      filled from `cshopq` ("Total Shares Repurchased - Quarter"), putting a
+      share count into a currency field, and then from `prstkcy / 4`, which
+      is flat imputation.
+    - `cshfdq` ("Com Shares for Diluted EPS") must never be back-filled from
+      `cshoq` ("Common Shares Outstanding") -- a different quantity.
+    - A former `tstkq <- tstkcq` branch was removed as dead code: `tstkcq` is
+      absent from every file in this Compustat extract (verified across 300
+      files), and the branch was gated on `tstkq` being absent, which it never
+      is.
+
+    See AGENTS.md S4.2 (no imputation, ever) and
+    contracts/field_era_semantics.py for the declared per-era semantics.
+    """
+    df = _apply_source_column_overrides(df, source_file=source_file)
+    df = _ensure_stage1_fields(df)
+    return _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
 
 
 def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
@@ -149,7 +209,7 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
         df["ticker"] = ticker_fallback
 
     df["source_file"] = path.name
-    df = _derive_support_fallbacks(df)
+    df = _prepare_legacy_frame(df, source_file=path.name)
 
     if "datadate" in df.columns:
         df["period_end"] = pd.to_datetime(df["datadate"], errors="coerce")
@@ -353,9 +413,9 @@ def _prepare_stage1_publish_frame(
         year_column="year",
     )
     if stage1.empty:
-        return pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+        return pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
 
-    stage1 = stage1[list(STAGE1_OUTPUT_COLUMNS)].sort_values(
+    stage1 = stage1[list(STAGE1_RAW_COLUMNS)].sort_values(
         ["ticker", "year", "quarter"],
         kind="mergesort",
     )
@@ -386,7 +446,7 @@ def build_legacy_raw_stage1_compare_frame(
         raw_dir=resolved_raw_dir,
     )
     if not frames:
-        return pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_file"])
+        return pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_file"])
 
     canonical = pd.concat(frames, ignore_index=True)
     stage1_base = canonical.rename(columns={"fyearq": "year", "fqtr": "quarter"})
@@ -401,18 +461,18 @@ def build_legacy_raw_stage1_compare_frame(
         key_columns=["ticker", "year", "quarter"],
     )
 
-    for field in STAGE1_OUTPUT_COLUMNS:
+    for field in STAGE1_RAW_COLUMNS:
         if field not in stage1_deduped.columns:
             stage1_deduped[field] = pd.NA
     if "source_file" not in stage1_deduped.columns:
         stage1_deduped["source_file"] = pd.NA
 
-    compare_frame = stage1_deduped[[*STAGE1_OUTPUT_COLUMNS, "source_file"]].sort_values(
+    compare_frame = stage1_deduped[[*STAGE1_RAW_COLUMNS, "source_file"]].sort_values(
         ["ticker", "year", "quarter"],
         kind="mergesort",
     )
     compare_frame = compare_frame.reset_index(drop=True)
-    validate_stage1_frame_columns(compare_frame[list(STAGE1_OUTPUT_COLUMNS)].columns.tolist())
+    validate_stage1_frame_columns(compare_frame[list(STAGE1_RAW_COLUMNS)].columns.tolist())
     return compare_frame
 
 
@@ -428,10 +488,10 @@ def _write_stage1_year_partitions(
     for year in range(start_year, end_year + 1):
         year_path = output_dir / f"raw_fundamentals_{year}.csv"
         year_df = df[df["year"] == year].copy() if not df.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         if year_df.empty:
-            year_df = pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+            year_df = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
         year_df.to_csv(year_path, index=False)
         artifacts[f"processed_{year}"] = str(year_path)
     return artifacts
@@ -448,7 +508,7 @@ def _build_stage1_coverage(
     rows: list[dict[str, int]] = []
     for year in range(start_year, end_year + 1):
         year_df = df[df["year"] == year].copy() if not df.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         quarter_counts = (
             year_df.groupby("ticker")["quarter"].nunique() if not year_df.empty else pd.Series(dtype="int64")
