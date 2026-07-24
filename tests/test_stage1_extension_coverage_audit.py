@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_RAW_COLUMNS
 from fundamentals_pipeline.steps.stage1_extension_coverage_audit import (
     run_stage1_extension_coverage_audit,
 )
@@ -11,10 +11,10 @@ from fundamentals_pipeline.steps.stage1_extension_coverage_audit import (
 def _publish_year(processed_dir, year: int, rows: list[dict[str, object]]) -> None:
     processed_dir.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(rows)
-    for column in STAGE1_OUTPUT_COLUMNS:
+    for column in STAGE1_RAW_COLUMNS:
         if column not in frame.columns:
             frame[column] = pd.NA
-    frame = frame[list(STAGE1_OUTPUT_COLUMNS)]
+    frame = frame[list(STAGE1_RAW_COLUMNS)]
     frame.to_csv(processed_dir / f"raw_fundamentals_{year}.csv", index=False)
 
 

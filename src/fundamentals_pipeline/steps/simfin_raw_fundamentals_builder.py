@@ -11,7 +11,7 @@ from ..contracts.simfin_aliases import SIMFIN_TICKER_ALIASES
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
-    STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
 )
@@ -323,7 +323,7 @@ def _derive_eps(frame: pd.DataFrame) -> pd.Series:
 def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame:
     """Map one SimFin family frame into the raw fundamentals contract."""
     if frame.empty:
-        return pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"])
+        return pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"])
 
     out = pd.DataFrame(
         {
@@ -401,7 +401,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["dpq"] = _numeric_series(frame, SIMFIN_CASHFLOW_DA_COLUMN)
     out["source_family"] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)
-    return out[[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"]]
+    return out[[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"]]
 
 
 def _select_best_family_rows(
@@ -409,7 +409,7 @@ def _select_best_family_rows(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Select the strongest family candidate per ticker-year-quarter."""
     if candidates.empty:
-        empty = pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family"])
+        empty = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family"])
         return empty, pd.DataFrame(columns=SIMFIN_CONFLICT_COLUMNS)
 
     ranked = candidates.copy()
@@ -430,7 +430,7 @@ def _select_best_family_rows(
         ].reset_index(drop=True)
 
     selected = ranked.drop_duplicates(subset=key, keep="first").reset_index(drop=True)
-    return selected[[*STAGE1_OUTPUT_COLUMNS, "source_family"]], conflicts
+    return selected[[*STAGE1_RAW_COLUMNS, "source_family"]], conflicts
 
 
 def _write_year_partitions(
@@ -445,10 +445,10 @@ def _write_year_partitions(
     for year in range(start_year, end_year + 1):
         year_path = output_dir / f"raw_fundamentals_{year}.csv"
         year_df = frame[frame["year"] == year].copy() if not frame.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         if year_df.empty:
-            year_df = pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+            year_df = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
         year_df.to_csv(year_path, index=False)
         artifacts[f"processed_{year}"] = str(year_path)
     return artifacts
@@ -465,7 +465,7 @@ def _build_coverage(
     rows: list[dict[str, int]] = []
     for year in range(start_year, end_year + 1):
         year_df = frame[frame["year"] == year].copy() if not frame.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         quarter_counts = (
             year_df.groupby("ticker")["quarter"].nunique()
@@ -668,7 +668,7 @@ def build_simfin_raw_fundamentals(
     if nonempty_candidates:
         candidates = pd.concat(nonempty_candidates, ignore_index=True)
     else:
-        candidates = pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_family", "mapped_non_null_count"])
+        candidates = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"])
     selected, conflicts = _select_best_family_rows(candidates)
     selected = _expand_requested_ticker_rows(
         selected,
@@ -680,11 +680,11 @@ def build_simfin_raw_fundamentals(
         source_system="simfin",
     )
     validate_stage1_frame_columns(
-        normalized_selected.columns[: len(STAGE1_OUTPUT_COLUMNS)].tolist()
+        normalized_selected.columns[: len(STAGE1_RAW_COLUMNS)].tolist()
     )
 
     year_outputs = _write_year_partitions(
-        normalized_selected[list(STAGE1_OUTPUT_COLUMNS)],
+        normalized_selected[list(STAGE1_RAW_COLUMNS)],
         output_dir=resolved_output_dir,
         start_year=start_year,
         end_year=end_year,

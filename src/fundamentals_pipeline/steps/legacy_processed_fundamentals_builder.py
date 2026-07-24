@@ -16,7 +16,7 @@ import pandas as pd
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
-    STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
     SUPPORT_RAW_FIELDS,
     validate_stage1_frame_columns,
 )
@@ -353,9 +353,9 @@ def _prepare_stage1_publish_frame(
         year_column="year",
     )
     if stage1.empty:
-        return pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+        return pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
 
-    stage1 = stage1[list(STAGE1_OUTPUT_COLUMNS)].sort_values(
+    stage1 = stage1[list(STAGE1_RAW_COLUMNS)].sort_values(
         ["ticker", "year", "quarter"],
         kind="mergesort",
     )
@@ -386,7 +386,7 @@ def build_legacy_raw_stage1_compare_frame(
         raw_dir=resolved_raw_dir,
     )
     if not frames:
-        return pd.DataFrame(columns=[*STAGE1_OUTPUT_COLUMNS, "source_file"])
+        return pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_file"])
 
     canonical = pd.concat(frames, ignore_index=True)
     stage1_base = canonical.rename(columns={"fyearq": "year", "fqtr": "quarter"})
@@ -401,18 +401,18 @@ def build_legacy_raw_stage1_compare_frame(
         key_columns=["ticker", "year", "quarter"],
     )
 
-    for field in STAGE1_OUTPUT_COLUMNS:
+    for field in STAGE1_RAW_COLUMNS:
         if field not in stage1_deduped.columns:
             stage1_deduped[field] = pd.NA
     if "source_file" not in stage1_deduped.columns:
         stage1_deduped["source_file"] = pd.NA
 
-    compare_frame = stage1_deduped[[*STAGE1_OUTPUT_COLUMNS, "source_file"]].sort_values(
+    compare_frame = stage1_deduped[[*STAGE1_RAW_COLUMNS, "source_file"]].sort_values(
         ["ticker", "year", "quarter"],
         kind="mergesort",
     )
     compare_frame = compare_frame.reset_index(drop=True)
-    validate_stage1_frame_columns(compare_frame[list(STAGE1_OUTPUT_COLUMNS)].columns.tolist())
+    validate_stage1_frame_columns(compare_frame[list(STAGE1_RAW_COLUMNS)].columns.tolist())
     return compare_frame
 
 
@@ -428,10 +428,10 @@ def _write_stage1_year_partitions(
     for year in range(start_year, end_year + 1):
         year_path = output_dir / f"raw_fundamentals_{year}.csv"
         year_df = df[df["year"] == year].copy() if not df.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         if year_df.empty:
-            year_df = pd.DataFrame(columns=STAGE1_OUTPUT_COLUMNS)
+            year_df = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
         year_df.to_csv(year_path, index=False)
         artifacts[f"processed_{year}"] = str(year_path)
     return artifacts
@@ -448,7 +448,7 @@ def _build_stage1_coverage(
     rows: list[dict[str, int]] = []
     for year in range(start_year, end_year + 1):
         year_df = df[df["year"] == year].copy() if not df.empty else pd.DataFrame(
-            columns=STAGE1_OUTPUT_COLUMNS
+            columns=STAGE1_RAW_COLUMNS
         )
         quarter_counts = (
             year_df.groupby("ticker")["quarter"].nunique() if not year_df.empty else pd.Series(dtype="int64")

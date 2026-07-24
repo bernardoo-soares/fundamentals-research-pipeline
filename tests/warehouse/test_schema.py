@@ -4,7 +4,7 @@ from fundamentals_pipeline.contracts.fundamentals_annual_schema import (
     ANNUAL_VALUE_COLUMNS,
 )
 from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
-    STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
 )
 from fundamentals_pipeline.warehouse.connection import open_warehouse
 from fundamentals_pipeline.warehouse.schema import create_all_tables
@@ -38,7 +38,7 @@ def test_quarterly_columns_match_stage1_plus_provenance(tmp_path) -> None:
         create_all_tables(conn)
         cols = _columns(conn, "fundamentals_quarterly")
     assert cols == [
-        *STAGE1_OUTPUT_COLUMNS,
+        *STAGE1_RAW_COLUMNS,
         "source_era",
         "computed_at",
         "pipeline_version",

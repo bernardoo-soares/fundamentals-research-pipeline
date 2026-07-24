@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from fundamentals_pipeline import __main__ as cli
-from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_RAW_COLUMNS
 from fundamentals_pipeline.steps.legacy_processed_fundamentals_builder import (
     _prepare_legacy_frame,
     build_legacy_fundamentals,
@@ -142,7 +142,7 @@ def test_build_legacy_raw_stage1_writes_yearly_raw_only_outputs_and_reports(tmp_
     )
 
     year_df = pd.read_csv(artifacts["processed_2024"])
-    assert tuple(year_df.columns) == STAGE1_OUTPUT_COLUMNS
+    assert tuple(year_df.columns) == STAGE1_RAW_COLUMNS
     assert len(year_df) == 4
     assert "Operating_Margin" not in year_df.columns
 

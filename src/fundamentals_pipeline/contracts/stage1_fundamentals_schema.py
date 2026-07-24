@@ -68,22 +68,36 @@ MONETARY_RAW_FIELDS: tuple[str, ...] = tuple(
 PUBLISHED_UNIT_SCALE_NAME = "legacy_millions_scale"
 
 STAGE1_KEY_COLUMNS: tuple[str, ...] = ("ticker", "year", "quarter")
-STAGE1_OUTPUT_COLUMNS: tuple[str, ...] = (
+
+# Provenance metadata, not raw fields: deliberately excluded from the
+# CORE/SUPPORT/EXTENDED groups so unit classification is unaffected.
+PROVENANCE_COLUMNS: tuple[str, ...] = ("source_era",)
+
+# What a single provider's builder emits into its staging directory.
+STAGE1_RAW_COLUMNS: tuple[str, ...] = (
     *STAGE1_KEY_COLUMNS,
     *CORE_RAW_FIELDS,
     *SUPPORT_RAW_FIELDS,
     *EXTENDED_RAW_FIELDS,
 )
 
+# What is published after era resolution and read by the warehouse loader.
+# `source_era` records which provider served the row, replacing the loader's
+# former practice of inferring it from the year.
+STAGE1_OUTPUT_COLUMNS: tuple[str, ...] = (
+    *STAGE1_RAW_COLUMNS,
+    *PROVENANCE_COLUMNS,
+)
+
 
 def stage1_yearly_columns() -> tuple[str, ...]:
-    """Return the canonical Stage 1 yearly CSV column order."""
+    """Return the published Stage 1 yearly CSV column order (incl. provenance)."""
     return STAGE1_OUTPUT_COLUMNS
 
 
 def validate_stage1_frame_columns(columns: list[str] | tuple[str, ...]) -> None:
     """Validate that a frame contains the full Stage 1 raw-only schema."""
-    missing = [column for column in STAGE1_OUTPUT_COLUMNS if column not in columns]
+    missing = [column for column in STAGE1_RAW_COLUMNS if column not in columns]
     if missing:
         raise ValueError(f"Stage 1 frame missing required columns: {missing}")
 

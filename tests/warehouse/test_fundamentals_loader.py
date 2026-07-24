@@ -14,10 +14,25 @@ def _row(ticker: str, year: int, quarter: int, **fields) -> dict:
     return {"ticker": ticker, "year": year, "quarter": quarter, **fields}
 
 
-def test_loads_rows_and_assigns_source_era(tmp_path, write_stage1_year) -> None:
+def test_loads_rows_and_preserves_published_source_era(
+    tmp_path, write_stage1_year
+) -> None:
+    """The loader reads recorded provenance; it never infers it from the year.
+
+    Inferring it is what discarded usable legacy data for FY2023. Here FY2023
+    is legacy-served, which the old year-based rule could not represent.
+    """
     processed = tmp_path / "processed"
-    write_stage1_year(processed, 2022, [_row("AAPL", 2022, 1, saleq=90.0)])
-    write_stage1_year(processed, 2023, [_row("AAPL", 2023, 1, saleq=100.0)])
+    write_stage1_year(
+        processed,
+        2022,
+        [_row("AAPL", 2022, 1, saleq=90.0, source_era="legacy_compustat")],
+    )
+    write_stage1_year(
+        processed,
+        2023,
+        [_row("AAPL", 2023, 1, saleq=100.0, source_era="legacy_compustat")],
+    )
 
     db_path = tmp_path / "research.duckdb"
     with open_warehouse(db_path) as conn:
@@ -35,7 +50,7 @@ def test_loads_rows_and_assigns_source_era(tmp_path, write_stage1_year) -> None:
         ).df()
 
     assert loaded == 2
-    assert list(frame["source_era"]) == ["legacy_compustat", "simfin"]
+    assert list(frame["source_era"]) == ["legacy_compustat", "legacy_compustat"]
     assert list(frame["saleq"]) == [90.0, 100.0]
 
 

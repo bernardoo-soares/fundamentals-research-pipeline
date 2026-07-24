@@ -27,6 +27,7 @@ from .steps.sec_submissions_pipeline import (
 )
 from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
 from .steps.sp500_universe_builder import build_sp500_current_universe
+from .steps.stage1_era_resolution import resolve_stage1_era
 from .steps.stage1_extension_coverage_audit import run_stage1_extension_coverage_audit
 from .warehouse.rebuild import rebuild_warehouse
 
@@ -185,6 +186,29 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     warehouse_parser.add_argument("--start-year", type=int, default=2006)
     warehouse_parser.add_argument("--end-year", type=int, default=2025)
+
+    era_resolution_parser = subparsers.add_parser(
+        "stage1-resolve-era",
+        help="Merge the provider-staged Stage 1 frames into published CSVs.",
+    )
+    era_resolution_parser.add_argument(
+        "--legacy-dir",
+        default=str(Path(settings.processed_data_dir) / "_staging_legacy"),
+    )
+    era_resolution_parser.add_argument(
+        "--simfin-dir",
+        default=str(Path(settings.processed_data_dir) / "_staging_simfin"),
+    )
+    era_resolution_parser.add_argument(
+        "--output-dir",
+        default=str(settings.processed_data_dir),
+    )
+    era_resolution_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    era_resolution_parser.add_argument("--start-year", type=int, default=2006)
+    era_resolution_parser.add_argument("--end-year", type=int, default=2025)
 
     cross_era_audit_parser = subparsers.add_parser(
         "cross-era-audit",
@@ -641,6 +665,29 @@ def main() -> None:
         LOG.info("Warehouse rebuild completed: %s", artifacts)
         for key, value in artifacts.items():
             print(f"{key}={value}")
+        return
+
+    if args.command == "stage1-resolve-era":
+        LOG.info(
+            "Running Stage 1 era resolution: legacy_dir=%s simfin_dir=%s "
+            "output_dir=%s reports_dir=%s start_year=%d end_year=%d",
+            args.legacy_dir,
+            args.simfin_dir,
+            args.output_dir,
+            args.reports_dir,
+            args.start_year,
+            args.end_year,
+        )
+        artifacts = resolve_stage1_era(
+            legacy_dir=args.legacy_dir,
+            simfin_dir=args.simfin_dir,
+            output_dir=args.output_dir,
+            reports_dir=args.reports_dir,
+            start_year=args.start_year,
+            end_year=args.end_year,
+        )
+        LOG.info("Stage 1 era resolution completed: %s", artifacts["rows_by_era"])
+        print(f"rows_by_era={artifacts['rows_by_era']}")
         return
 
     if args.command == "cross-era-audit":

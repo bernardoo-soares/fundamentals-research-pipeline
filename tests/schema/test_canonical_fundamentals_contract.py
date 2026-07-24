@@ -7,10 +7,12 @@ from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
     EXTENDED_RAW_FIELDS,
     MONETARY_RAW_FIELDS,
     PER_SHARE_FIELDS,
+    PROVENANCE_COLUMNS,
     PUBLISHED_UNIT_SCALE_NAME,
     SHARE_COUNT_FIELDS,
     STAGE1_KEY_COLUMNS,
     STAGE1_OUTPUT_COLUMNS,
+    STAGE1_RAW_COLUMNS,
     SUPPORT_RAW_FIELDS,
     stage1_yearly_columns,
     validate_stage1_frame_columns,
@@ -23,15 +25,25 @@ def test_stage1_output_columns_start_with_provider_agnostic_key() -> None:
 
 
 def test_stage1_output_columns_include_core_support_and_extended_fields_only() -> None:
-    assert STAGE1_OUTPUT_COLUMNS == (
+    """A builder emits raw fields only; provenance is added at publish time."""
+    assert STAGE1_RAW_COLUMNS == (
         *STAGE1_KEY_COLUMNS,
         *CORE_RAW_FIELDS,
         *SUPPORT_RAW_FIELDS,
         *EXTENDED_RAW_FIELDS,
     )
+    assert STAGE1_OUTPUT_COLUMNS == (*STAGE1_RAW_COLUMNS, *PROVENANCE_COLUMNS)
     assert "capxy" in SUPPORT_RAW_FIELDS
     assert "Operating_Margin" not in STAGE1_OUTPUT_COLUMNS
     assert "period_end" not in STAGE1_OUTPUT_COLUMNS
+
+
+def test_source_era_is_published_but_not_a_raw_field() -> None:
+    """Provenance must not leak into unit classification."""
+    assert PROVENANCE_COLUMNS == ("source_era",)
+    assert "source_era" in STAGE1_OUTPUT_COLUMNS
+    assert "source_era" not in STAGE1_RAW_COLUMNS
+    assert "source_era" not in MONETARY_RAW_FIELDS
 
 
 def test_extended_raw_fields_are_appended_after_support_fields() -> None:
@@ -45,7 +57,7 @@ def test_extended_raw_fields_are_appended_after_support_fields() -> None:
         "rectq",
     )
     support_end = 3 + len(CORE_RAW_FIELDS) + len(SUPPORT_RAW_FIELDS)
-    assert STAGE1_OUTPUT_COLUMNS[support_end:] == EXTENDED_RAW_FIELDS
+    assert STAGE1_RAW_COLUMNS[support_end:] == EXTENDED_RAW_FIELDS
 
 
 def test_extended_raw_fields_are_all_monetary() -> None:
@@ -62,7 +74,7 @@ def test_validate_stage1_frame_columns_accepts_full_schema() -> None:
 
 
 def test_validate_stage1_frame_columns_rejects_missing_columns() -> None:
-    columns = list(STAGE1_OUTPUT_COLUMNS[:-1])
+    columns = list(STAGE1_RAW_COLUMNS[:-1])
     with pytest.raises(ValueError, match="missing required columns"):
         validate_stage1_frame_columns(columns)
 
