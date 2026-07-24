@@ -295,6 +295,33 @@ metric. `xsgaq` (0.29) is the complementary side of the same COGS/SG&A split
 and is very likely the same cause, but that has **not** been separately
 verified.
 
+### 2.10 The two shipped metrics on divergent inputs: measured, not restricted
+
+`buyback_years_10y` and `eps_up_year_fraction_10y` read fields declared
+`eras_equivalent=False` and compute across the boundary. Measured at FY2023
+rather than assumed:
+
+| metric | input | verdict/direction flips | bias | median rel. diff |
+|---|---|---|---|---|
+| `buyback_years_10y` | `prstkcy` | **13.0%** (n=308) | **39:1 downward** | 0.149 |
+| `eps_up_year_fraction_10y` | `epspxq` | 5.7% (n=353) | symmetric | **0.0023** |
+
+Neither is fixable by remapping. SimFin publishes only the **net** equity line
+with no separate issuance/repurchase legs, and no EPS column at all.
+
+**Decision: caveat, do not restrict.** Applying `require_single_era` (§2.9)
+would cut these metrics to 9% coverage at FY2024 to correct an effect worth
+1-2 years out of 10. That is disproportionate. Both formula strings now carry
+the measured figures, and a contract test asserts the numbers stay present so
+the caveat cannot be quietly stripped.
+
+`buyback_years_10y` is the one to watch: the bias is directional, not random,
+so SimFin-served tickers read systematically LOW, and post-2022 the metric
+answers "was the company a net returner of equity capital?" rather than "did
+it repurchase?". SP4 scoring must not treat it as a hard criterion without
+accounting for that. `eps_up_year_fraction_10y` at 5.7% and a 0.23% median
+difference is genuinely minor.
+
 **14 fields remain in CONTRADICTION** and are genuine open items, listed in
 `data/reports/cross_era_reconciliation_2023.csv`. The largest are `dlttq`
 (0.27), `xsgaq` (0.29), `dlcq` (0.39). These

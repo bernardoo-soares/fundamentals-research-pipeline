@@ -215,7 +215,12 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         eras_equivalent=False,
         divergence_note=(
             "SimFin publishes no EPS column at all, so the SimFin-era value is "
-            "derived rather than as-reported. Irreducible: disclosed, not fixed."
+            "derived rather than as-reported. Irreducible: disclosed, not fixed. "
+            "Measured impact on eps_up_year_fraction_10y at the 2022->2023 "
+            "transition (n=353): the direction flips for 5.7% of tickers, with "
+            "a median relative difference of only 0.23%, affecting at most 1 of "
+            "~9 pairs in a 10-year window. Materially milder than the cogsq "
+            "divergence, which is why this metric is not era-restricted."
         ),
     ),
     # --- Balance sheet (point-in-time stocks) ---
@@ -420,9 +425,18 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         ),
         eras_equivalent=False,
         divergence_note=(
-            "Legacy is gross repurchase; SimFin is net equity flow (488 of 3548 "
-            "SimFin quarters negative against 1 of 30187 legacy). Magnitudes "
-            "align, so buyback_years_10y is usable with a stated era bias."
+            "Legacy is GROSS repurchase; SimFin is NET equity flow (488 of 3548 "
+            "SimFin quarters negative against 1 of 30187 legacy). SimFin "
+            "publishes no separate issuance/repurchase legs -- only the net "
+            "line -- so this is irreducible, not a remapping error. "
+            "Measured impact on buyback_years_10y at FY2023 (n=308): the "
+            "'> 0' verdict flips for 13.0% of tickers, asymmetrically -- 39 "
+            "cases where legacy sees a buyback and SimFin does not, against 1 "
+            "the other way, because 18.2% of SimFin rows are net issuance. The "
+            "count is therefore biased DOWNWARD by up to 2 of 10 years for "
+            "SimFin-served tickers. Post-2022 the metric answers 'was the "
+            "company a net returner of equity capital?' rather than 'did it "
+            "repurchase?'."
         ),
     ),
 )

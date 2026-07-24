@@ -58,3 +58,24 @@ def test_eps_metric_carries_derivation_caveat() -> None:
 def test_buyback_metric_carries_era_divergence_note() -> None:
     """prstkcy is gross repurchase in legacy but net equity flow in SimFin."""
     assert "net" in _metric("buyback_years_10y").formula.lower()
+
+
+def test_divergent_input_metrics_carry_measured_caveats():
+    """A known defect ships with a visible caveat carrying real numbers.
+
+    Neither metric is era-restricted: the effect is 1-2 years out of 10,
+    where require_single_era would cost ~91% of coverage at FY2024. The
+    caveats must therefore quantify what the reader is accepting.
+    """
+    buyback = _metric("buyback_years_10y").formula
+    assert "13.0%" in buyback          # verdict flip rate at FY2023
+    assert "LOW" in buyback            # directional bias, 39:1
+    eps = _metric("eps_up_year_fraction_10y").formula
+    assert "5.7%" in eps               # direction flip rate
+    assert "0.23%" in eps              # median relative difference
+
+
+def test_no_shipped_metric_silently_requires_single_era():
+    """require_single_era exists for the family slice; nothing sets it yet,
+    so this branch changes no output."""
+    assert not any(m.requires_single_era for m in REGISTRY)

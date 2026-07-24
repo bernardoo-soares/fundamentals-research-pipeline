@@ -34,8 +34,9 @@ REGISTRY: tuple[TrendMetric, ...] = (
         "fraction of YoY increases in epspxq_annual over the 10y window "
         "(NOTE: epspxq is as-reported basic EPS in the legacy era but is "
         "derived as NI(common)/shares(basic) in the SimFin era, which publishes "
-        "no EPS column at all — an irreducible declared divergence, see "
-        "contracts/field_era_semantics.py)",
+        "no EPS column at all. Measured FY2023: the 2022->2023 direction flips "
+        "for 5.7% of tickers at a median relative difference of 0.23%, "
+        "affecting at most 1 of ~9 pairs in the window.)",
         up_year_fraction_metric(col("epspxq_annual"), 10),
     ),
     TrendMetric(
@@ -51,9 +52,13 @@ REGISTRY: tuple[TrendMetric, ...] = (
     TrendMetric(
         "buyback_years_10y", "1", 10,
         "count of 10y window years with prstkcy_annual > 0 "
-        "(NOTE: legacy Compustat prstkcy is gross repurchase while SimFin is "
-        "net equity flow — a declared divergence with aligned magnitudes, see "
-        "contracts/field_era_semantics.py)",
+        "(NOTE: legacy Compustat prstkcy is GROSS repurchase while SimFin "
+        "is NET equity flow, and SimFin publishes no gross leg, so this "
+        "cannot be reconciled. Measured FY2023: the >0 verdict flips for "
+        "13.0% of tickers, 39:1 biased toward legacy seeing a buyback that "
+        "SimFin does not, so the count reads LOW by up to 2 of 10 years for "
+        "SimFin-served tickers. Post-2022 this counts net equity return, "
+        "not repurchase.)",
         count_years_metric(col("prstkcy_annual"), 0.0, 10),
     ),
     TrendMetric(
