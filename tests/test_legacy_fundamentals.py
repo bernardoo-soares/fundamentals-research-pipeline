@@ -5,6 +5,7 @@ import pandas as pd
 from fundamentals_pipeline import __main__ as cli
 from fundamentals_pipeline.contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
 from fundamentals_pipeline.steps.legacy_processed_fundamentals_builder import (
+    _prepare_legacy_frame,
     build_legacy_fundamentals,
     build_legacy_raw_stage1,
 )
@@ -358,3 +359,49 @@ def test_workflow_run_legacy_raw_stage1_window_invokes_step(monkeypatch) -> None
     assert artifacts["processed_2023"] == "data/processed/raw_fundamentals_2023.csv"
     assert captured["start_year"] == 2023
     assert captured["end_year"] == 2023
+
+
+def test_prstkcq_is_null_when_source_lacks_it() -> None:
+    """Regression: prstkcq was filled from cshopq, a SHARE COUNT.
+
+    Compustat publishes no quarterly purchase-of-stock column at all
+    ("prstkcq" is absent from the extract), so the honest value is null.
+    Real AAPL FY2019 Q1: cshopq 38.024 shares vs the actual 10114 dollars
+    of YTD buyback. Pins the unit defect closed.
+    """
+    frame = pd.DataFrame(
+        {"fyearq": [2019], "fqtr": [1], "cshopq": [38.024], "prstkcy": [10114.0]}
+    )
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["prstkcq"].iloc[0])
+
+
+def test_prstkcq_is_not_derived_from_quartered_prstkcy() -> None:
+    """Regression: prstkcq was filled with prstkcy / 4 -- flat imputation."""
+    frame = pd.DataFrame(
+        {"fyearq": [2019], "fqtr": [1], "cshopq": [None], "prstkcy": [10114.0]}
+    )
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["prstkcq"].iloc[0])
+
+
+def test_cshfdq_is_null_when_source_lacks_it() -> None:
+    """Regression: cshfdq was filled from cshoq.
+
+    Compustat defines cshfdq as "Com Shares for Diluted EPS" and cshoq as
+    "Common Shares Outstanding" -- different quantities, materially so for
+    companies with significant options or convertibles.
+    """
+    frame = pd.DataFrame({"fyearq": [2019], "fqtr": [1], "cshoq": [4443.236]})
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["cshfdq"].iloc[0])
+
+
+def test_present_source_values_are_preserved() -> None:
+    """Removing fallbacks must not disturb genuinely present values."""
+    frame = pd.DataFrame(
+        {"fyearq": [2019], "fqtr": [1], "cshfdq": [4500.0], "saleq": [64040.0]}
+    )
+    result = _prepare_legacy_frame(frame)
+    assert result["cshfdq"].iloc[0] == 4500.0
+    assert result["saleq"].iloc[0] == 64040.0

@@ -85,7 +85,6 @@ def _legacy_input_columns() -> set[str]:
         "datadate",
         "fyearq",
         "fqtr",
-        "tstkcq",
         "tstkq",
         *LEGACY_STAGE1_FIELDS,
     }
@@ -118,23 +117,24 @@ def _ensure_stage1_fields(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _derive_support_fallbacks(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply explicit fallback rules for sparse legacy raw fields."""
-    if "tstkq" not in df.columns and "tstkcq" in df.columns:
-        df["tstkq"] = pd.to_numeric(df["tstkcq"], errors="coerce")
+def _prepare_legacy_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure every Stage 1 field exists and is numeric.
 
+    Deliberately performs NO substitution. Fields absent from the legacy
+    extract stay null:
+
+    - `prstkcq` has no Compustat quarterly column at all; it was previously
+      filled from `cshopq` ("Total Shares Repurchased - Quarter"), putting a
+      share count into a currency field, and then from `prstkcy / 4`, which
+      is flat imputation.
+    - `cshfdq` ("Com Shares for Diluted EPS") must never be back-filled from
+      `cshoq` ("Common Shares Outstanding") -- a different quantity.
+
+    See AGENTS.md S4.2 (no imputation, ever) and
+    contracts/field_era_semantics.py for the declared per-era semantics.
+    """
     df = _ensure_stage1_fields(df)
-    df = _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
-
-    prstkcq = pd.to_numeric(df["prstkcq"], errors="coerce")
-    prstkcq = prstkcq.fillna(pd.to_numeric(df["cshopq"], errors="coerce"))
-    prstkcq = prstkcq.fillna(pd.to_numeric(df["prstkcy"], errors="coerce") / 4.0)
-    df["prstkcq"] = prstkcq
-
-    cshfdq = pd.to_numeric(df["cshfdq"], errors="coerce")
-    cshfdq = cshfdq.fillna(pd.to_numeric(df["cshoq"], errors="coerce"))
-    df["cshfdq"] = cshfdq
-    return df
+    return _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
 
 
 def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
@@ -149,7 +149,7 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
         df["ticker"] = ticker_fallback
 
     df["source_file"] = path.name
-    df = _derive_support_fallbacks(df)
+    df = _prepare_legacy_frame(df)
 
     if "datadate" in df.columns:
         df["period_end"] = pd.to_datetime(df["datadate"], errors="coerce")
