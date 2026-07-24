@@ -37,7 +37,7 @@ def test_loads_rows_and_preserves_published_source_era(
     db_path = tmp_path / "research.duckdb"
     with open_warehouse(db_path) as conn:
         create_all_tables(conn)
-        loaded = load_fundamentals_quarterly(
+        loaded, _violations = load_fundamentals_quarterly(
             conn,
             processed_dir=processed,
             start_year=2022,

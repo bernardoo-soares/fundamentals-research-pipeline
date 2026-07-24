@@ -132,7 +132,28 @@ _STOCK = Basis.POINT_IN_TIME
 
 FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
     # --- Income statement (discrete quarterly flows) ---
-    _equivalent_usd("saleq", "saleq", "Revenue", "total revenue", _FLOW),
+    FieldEraSemantics(
+        field="saleq",
+        legacy=_usd("saleq", "Sales/Turnover (Net)", _FLOW),
+        simfin=_usd("Revenue", "total revenue", _FLOW),
+        eras_equivalent=True,
+        min_agreement_rate=0.80,
+        threshold_justification=(
+            "Investigated 2026-07-24. The concepts DO match -- the median "
+            "relative difference is exactly 0.0000 and `revtq` scores the same "
+            "as `saleq` (84.7% vs 83.5%), so this is not a definitional "
+            "mismatch. The residual is provider data quality: SimFin derives "
+            "some Q4 figures as a residual and publishes IMPOSSIBLE values when "
+            "the fiscal calendars disagree -- eight FY2023 tickers carried "
+            "negative Q4 revenue (Marriott -11318, Dollar Tree -5183, Hilton "
+            "-3218), and for all of them the four quarters no longer summed to "
+            "the true annual (Dollar Tree 16781 against 30604). "
+            "`warehouse/plausibility.py` now nulls impossible values so they "
+            "cannot propagate. The threshold is 0.80 to accept the residual "
+            "tail rather than to hide it; the tail is enumerated in the "
+            "reconciliation report and remains an open item."
+        ),
+    ),
     _equivalent_usd("niq", "niq", "Net Income", "net income", _FLOW),
     _equivalent_usd(
         "oiadpq", "oiadpq", "Operating Income (Loss)", "operating income", _FLOW
@@ -274,11 +295,57 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         ),
     ),
     _equivalent_usd("atq", "atq", "Total Assets", "total assets", _STOCK),
-    _equivalent_usd("ceqq", "ceqq", "Total Equity", "common equity", _STOCK),
-    _equivalent_usd(
-        "dlcq", "dlcq", "Short Term Debt", "short-term debt", _STOCK
+    FieldEraSemantics(
+        field="ceqq",
+        legacy=_usd("seqq + mibtq", "stockholders equity + noncontrolling", _STOCK),
+        simfin=_usd("Total Equity", "total equity incl. noncontrolling", _STOCK),
+        eras_equivalent=True,
+        threshold_justification=(
+            "Sourced from Compustat `seqq + mibtq`, NOT `ceqq`. SimFin "
+            "publishes one equity line that includes noncontrolling interests; "
+            "Compustat `ceqq` is Common/Ordinary Equity and excludes them. "
+            "Measured on the FY2023 overlap: ceqq 64.7%, teqq 86.3%, "
+            "seqq+mibtq 94.0% (median relative difference 0.0000). "
+            "CONSEQUENCE FOR ROE: the numerator is parent-only income in both "
+            "eras (legacy niq agrees 92.0% with SimFin Net Income, whereas "
+            "pre-noncontrolling ibmiiq agrees only 67.6%), so pairing it with "
+            "total equity slightly understates ROE for companies with material "
+            "noncontrolling interests. The effect is small -- mibtq is exactly "
+            "zero for 45.6% of rows and the ceqq-vs-total median gap is 0.12% "
+            "-- and SimFin offers no common-equity line, so this is the only "
+            "cross-era-comparable choice. Document it wherever ROE is shown."
+        ),
     ),
-    _equivalent_usd("dlttq", "dlttq", "Long Term Debt", "long-term debt", _STOCK),
+    FieldEraSemantics(
+        field="dlcq",
+        legacy=_usd("dlcq", "Debt in Current Liabilities", _STOCK),
+        simfin=_usd("Short Term Debt", "short-term debt", _STOCK),
+        eras_equivalent=False,
+        divergence_note=(
+            "Investigated 2026-07-24 on the FY2023 overlap: dlcq agrees 8.7% "
+            "(median 0.183), dd1q 3.9%, dlcq-dd1q 6.6%. Coverage also diverges "
+            "sharply -- SimFin leaves this null for 28.2% of companies against "
+            "0.9% for Compustat -- so the providers disagree on both the value "
+            "and on whether the concept applies. NOT cross-era comparable: "
+            "st_lt_debt_ratio must stay inside a single era."
+        ),
+    ),
+    FieldEraSemantics(
+        field="dlttq",
+        legacy=_usd("dlttq", "Long-Term Debt - Total", _STOCK),
+        simfin=_usd("Long Term Debt", "long-term debt", _STOCK),
+        eras_equivalent=False,
+        divergence_note=(
+            "The providers draw the long-term-debt boundary differently, most "
+            "likely over lease obligations and the current portion. "
+            "Investigated 2026-07-24 on the FY2023 overlap: dlttq agrees 9.8% "
+            "(median 0.064), dlttq+dd1q 1.7%, lltq 0.0%. No Compustat column "
+            "matches, so this is a classification boundary rather than a "
+            "remapping error -- the same shape as ppentq. NOT cross-era "
+            "comparable: lt_debt_payback_years and st_lt_debt_ratio must stay "
+            "inside a single era."
+        ),
+    ),
     FieldEraSemantics(
         field="req",
         legacy=_usd("reunaq", "Unadjusted Retained Earnings", _STOCK),

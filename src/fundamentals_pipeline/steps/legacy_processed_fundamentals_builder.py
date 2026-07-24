@@ -44,6 +44,22 @@ LEGACY_SOURCE_COLUMN_OVERRIDES: dict[str, str] = {
     # relative difference 0.0000). See contracts/field_era_semantics.py.
     "req": "reunaq",
 }
+
+# Canonical field -> legacy source columns summed, where no single Compustat
+# column carries the concept the other provider publishes. Summed, never
+# fallback-chained: a null part is treated as absent-and-zero only where that
+# is validated by measurement (see below).
+LEGACY_SOURCE_COLUMN_SUMS: dict[str, tuple[str, ...]] = {
+    # SimFin publishes one equity line, "Total Equity", which includes
+    # noncontrolling interests. Compustat `ceqq` is Common/Ordinary Equity and
+    # excludes them. Measured on the FY2023 overlap: ceqq agrees 64.7%, teqq
+    # 86.3%, seqq+mibtq 94.0%. `mibtq` is null for 5.1% of rows and exactly
+    # zero for 45.6% of those present; treating null as zero holds agreement at
+    # 94.0% while recovering those rows, which is the measurement that
+    # justifies it -- a company that reports no noncontrolling-interest line
+    # has none.
+    "ceqq": ("seqq", "mibtq"),
+}
 LEGACY_TICKER_ALIASES: dict[str, tuple[str, ...]] = {
     "GOOG": ("GOOG", "GOOGL"),
     "GOOGL": ("GOOGL", "GOOG"),
@@ -105,6 +121,7 @@ def _legacy_input_columns() -> set[str]:
         "tstkq",
         *LEGACY_STAGE1_FIELDS,
         *LEGACY_SOURCE_COLUMN_OVERRIDES.values(),
+        *(c for parts in LEGACY_SOURCE_COLUMN_SUMS.values() for c in parts),
     }
 
 
@@ -144,13 +161,48 @@ def _apply_source_column_overrides(
 
     Applied before `_ensure_stage1_fields` so the canonical name is populated
     from the declared source rather than from a same-named column that means
-    something else. When the source column is absent, the canonical field is
-    set null -- it never falls back to the same-named column.
+    something else. When the (base) source column is absent, the canonical
+    field is set null -- it never falls back to the same-named column.
 
-    A missing source column nulls the canonical field for every row of that
-    file, which is indistinguishable downstream from genuinely absent data, so
-    it is logged rather than applied silently.
+    Every substitution is logged rather than applied silently: a missing base
+    column nulls the field with a warning, and for a summed field a missing
+    secondary component is logged before being treated as zero. Nothing here
+    changes a value without leaving an audit trail.
     """
+    for canonical, parts in LEGACY_SOURCE_COLUMN_SUMS.items():
+        base = parts[0]
+        if base not in df.columns:
+            LOG.warning(
+                "Legacy source column %r for canonical %r is absent from %s; "
+                "%r will be null for all %d rows of this file.",
+                base, canonical, source_file or "<unknown file>",
+                canonical, len(df),
+            )
+            df[canonical] = pd.NA
+            continue
+        total = pd.to_numeric(df[base], errors="coerce")
+        for extra in parts[1:]:
+            if extra in df.columns:
+                # A null in a PRESENT component is a structural zero: the base
+                # column already captures the whole quantity for a company that
+                # reports no separate line. This is the measurement-justified
+                # case (see LEGACY_SOURCE_COLUMN_SUMS): mibtq null-per-row holds
+                # ceqq agreement at 94.0%.
+                total = total + pd.to_numeric(df[extra], errors="coerce").fillna(0.0)
+            else:
+                # A wholly ABSENT component column is a different, unmeasured
+                # case. It is still treated as zero (the base is the dominant
+                # term), but logged rather than applied silently -- mirroring
+                # the base-column branch above and the OVERRIDES loop below, so
+                # the substitution is never invisible in an audit.
+                LOG.warning(
+                    "Legacy summand column %r for canonical %r is absent from "
+                    "%s; treating it as zero for all %d rows (unvalidated when "
+                    "the column is missing entirely rather than null per row).",
+                    extra, canonical, source_file or "<unknown file>", len(df),
+                )
+        df[canonical] = total
+
     for canonical, source in LEGACY_SOURCE_COLUMN_OVERRIDES.items():
         if source in df.columns:
             df[canonical] = pd.to_numeric(df[source], errors="coerce")

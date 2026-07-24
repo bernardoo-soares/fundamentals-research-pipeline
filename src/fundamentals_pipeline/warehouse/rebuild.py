@@ -11,7 +11,7 @@ from .annualize import build_fundamentals_annual
 from .connection import open_warehouse
 from .fundamentals_loader import load_fundamentals_quarterly
 from .schema import WAREHOUSE_PIPELINE_VERSION, create_all_tables
-from .validation import build_health_report
+from .validation import build_health_report, write_plausibility_violations
 
 
 def rebuild_warehouse(
@@ -39,7 +39,7 @@ def rebuild_warehouse(
     try:
         with open_warehouse(tmp_path, read_only=False) as conn:
             create_all_tables(conn)
-            quarterly_rows = load_fundamentals_quarterly(
+            quarterly_rows, violations = load_fundamentals_quarterly(
                 conn,
                 processed_dir=processed_dir,
                 start_year=start_year,
@@ -51,6 +51,12 @@ def rebuild_warehouse(
             )
             health_path = build_health_report(
                 conn,
+                reports_dir=reports_dir,
+                start_year=start_year,
+                end_year=end_year,
+            )
+            violations_path = write_plausibility_violations(
+                violations,
                 reports_dir=reports_dir,
                 start_year=start_year,
                 end_year=end_year,
@@ -84,4 +90,6 @@ def rebuild_warehouse(
     return {
         "warehouse_path": str(warehouse),
         "health_report_path": health_path,
+        "plausibility_violations_path": violations_path,
+        "plausibility_nulled_count": str(len(violations)),
     }

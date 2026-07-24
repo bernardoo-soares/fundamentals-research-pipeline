@@ -9,6 +9,7 @@ import duckdb
 import pandas as pd
 
 from ..contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
+from .plausibility import apply_non_negative_gate
 from .schema import QUARTERLY_RAW_FIELDS
 
 _INSERT_COLUMNS = (
@@ -48,8 +49,14 @@ def load_fundamentals_quarterly(
     start_year: int,
     end_year: int,
     pipeline_version: str,
-) -> int:
-    """Read Stage 1 yearly CSVs, validate, and insert into fundamentals_quarterly."""
+) -> tuple[int, pd.DataFrame]:
+    """Read Stage 1 yearly CSVs, validate, and insert into fundamentals_quarterly.
+
+    Returns the inserted row count and a frame of plausibility violations --
+    impossible values that were nulled on the way in (see
+    `warehouse/plausibility.py`). The caller is responsible for persisting the
+    violations so the rejection stays auditable.
+    """
     if start_year > end_year:
         raise ValueError("start_year must be <= end_year.")
 
@@ -68,6 +75,8 @@ def load_fundamentals_quarterly(
 
     combined = pd.concat(frames, ignore_index=True)
     _validate_unique_keys(combined)
+    gated = apply_non_negative_gate(combined)
+    combined = gated.frame
     combined["computed_at"] = datetime.now(UTC).replace(tzinfo=None)
     combined["pipeline_version"] = pipeline_version
     combined = combined[list(_INSERT_COLUMNS)]
@@ -81,4 +90,4 @@ def load_fundamentals_quarterly(
         )
     finally:
         conn.unregister("staging_quarterly")
-    return int(len(combined))
+    return int(len(combined)), gated.violations

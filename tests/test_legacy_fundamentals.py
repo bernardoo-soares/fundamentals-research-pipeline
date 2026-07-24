@@ -42,10 +42,14 @@ def _legacy_row(
         "gdwlq": 100.0,
         "ivltq": 50.0,
         "atq": 500.0,
-        "ceqq": 200.0,
+        # ceqq and req are DERIVED from raw source columns, so the fixture
+        # supplies those raw columns rather than the canonical output names:
+        # ceqq = seqq + mibtq (195 + 5 = 200); req = reunaq (110).
+        "seqq": 195.0,
+        "mibtq": 5.0,
         "dlcq": 40.0,
         "dlttq": 60.0,
-        "req": 110.0,
+        "reunaq": 110.0,
         "tstkq": 5.0,
         "oancfq": 15.0,
         "oancfy": 60.0,
@@ -437,3 +441,44 @@ def test_req_is_null_when_unadjusted_source_missing() -> None:
     frame = pd.DataFrame({"fyearq": [2013], "fqtr": [4], "req": [138.0]})
     result = _prepare_legacy_frame(frame)
     assert pd.isna(result["req"].iloc[0])
+
+
+def test_ceqq_is_summed_from_seqq_and_mibtq() -> None:
+    """Canonical ceqq = seqq + mibtq (total equity incl. noncontrolling).
+
+    SimFin's single equity line includes noncontrolling interests; Compustat
+    ceqq (Common/Ordinary Equity) excludes them, so pairing to SimFin needs
+    seqq + mibtq. Measured on the FY2023 overlap: ceqq 64.7%, seqq+mibtq 94.0%.
+    """
+    frame = pd.DataFrame({"fyearq": [2023], "fqtr": [4], "seqq": [195.0], "mibtq": [5.0]})
+    result = _prepare_legacy_frame(frame)
+    assert result["ceqq"].iloc[0] == 200.0
+
+
+def test_ceqq_treats_null_mibtq_as_structural_zero() -> None:
+    """A company reporting no noncontrolling-interest line has none: with the
+    base seqq present, a null mibtq contributes zero rather than nulling ceqq.
+    This is the measurement-justified case (holds agreement at 94.0%)."""
+    frame = pd.DataFrame({"fyearq": [2023], "fqtr": [4], "seqq": [195.0], "mibtq": [None]})
+    result = _prepare_legacy_frame(frame)
+    assert result["ceqq"].iloc[0] == 195.0
+
+
+def test_ceqq_is_null_when_base_seqq_missing() -> None:
+    """Never fabricate the base: an absent seqq nulls ceqq, it does not fall
+    back to a same-named ceqq column."""
+    frame = pd.DataFrame({"fyearq": [2023], "fqtr": [4], "ceqq": [999.0], "mibtq": [5.0]})
+    result = _prepare_legacy_frame(frame)
+    assert pd.isna(result["ceqq"].iloc[0])
+
+
+def test_ceqq_logs_when_summand_column_missing_entirely(caplog) -> None:
+    """An absent summand column is treated as zero but LOGGED, not applied
+    silently -- the audit-trail guarantee the docstring makes."""
+    import logging
+
+    frame = pd.DataFrame({"fyearq": [2023], "fqtr": [4], "seqq": [195.0]})  # no mibtq
+    with caplog.at_level(logging.WARNING):
+        result = _prepare_legacy_frame(frame, source_file="AAPL-x.csv")
+    assert result["ceqq"].iloc[0] == 195.0
+    assert any("mibtq" in r.message and "zero" in r.message for r in caplog.records)

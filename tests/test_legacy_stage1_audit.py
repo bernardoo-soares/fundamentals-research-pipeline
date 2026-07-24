@@ -38,10 +38,14 @@ def _legacy_row(
         "gdwlq": 100.0,
         "ivltq": 50.0,
         "atq": 500.0,
-        "ceqq": 200.0,
+        # Raw legacy input: ceqq and req are derived from these source columns
+        # (ceqq = seqq + mibtq = 200; req = reunaq = 110), matching the
+        # published _stage1_row fixture's canonical values below.
+        "seqq": 195.0,
+        "mibtq": 5.0,
         "dlcq": 40.0,
         "dlttq": 60.0,
-        "req": 110.0,
+        "reunaq": 110.0,
         "tstkq": 5.0,
         "oancfq": 15.0,
         "oancfy": 60.0,
