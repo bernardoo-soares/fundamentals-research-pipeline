@@ -50,3 +50,31 @@ class SecRequestError(DataSourceError):
 
 class SecRateLimitError(SecRequestError):
     """Raised when SEC returns rate-limit related responses (for example 429)."""
+
+
+class CrossEraContradictionError(TradingBotError):
+    """Raised when measured data contradicts a declared era equivalence.
+
+    Attributes:
+        fields: Names of the fields whose declared equivalence failed.
+        report_path: Reconciliation report written before the raise, so a
+            failing run still leaves its evidence on disk.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        fields: tuple[str, ...] = (),
+        report_path: str | None = None,
+    ) -> None:
+        """Initialize with the contradicting fields and the report location.
+
+        Args:
+            message: Human-readable failure message.
+            fields: Field names whose declared equivalence was contradicted.
+            report_path: Path of the written reconciliation report.
+        """
+        super().__init__(message)
+        self.fields = fields
+        self.report_path = report_path

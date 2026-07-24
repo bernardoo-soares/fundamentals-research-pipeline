@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .core.exceptions import CrossEraContradictionError
 from .core.logging import configure_logging, get_logger
 from .core.settings import get_settings
 from .metrics.builder import build_metrics_trend
+from .steps.cross_era_semantic_audit import run_cross_era_audit_from_dirs
 from .steps.legacy_processed_fundamentals_builder import (
     build_legacy_fundamentals,
     build_legacy_raw_stage1,
@@ -183,6 +185,24 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     warehouse_parser.add_argument("--start-year", type=int, default=2006)
     warehouse_parser.add_argument("--end-year", type=int, default=2025)
+
+    cross_era_audit_parser = subparsers.add_parser(
+        "cross-era-audit",
+        help="Reconcile legacy and SimFin values on the provider overlap window.",
+    )
+    cross_era_audit_parser.add_argument(
+        "--legacy-dir",
+        default=str(Path(settings.processed_data_dir) / "_staging_legacy"),
+    )
+    cross_era_audit_parser.add_argument(
+        "--simfin-dir",
+        default=str(Path(settings.processed_data_dir) / "_staging_simfin"),
+    )
+    cross_era_audit_parser.add_argument(
+        "--reports-dir",
+        default=str(settings.reports_data_dir),
+    )
+    cross_era_audit_parser.add_argument("--year", type=int, default=2023)
 
     metrics_parser = subparsers.add_parser(
         "metrics-build",
@@ -620,6 +640,32 @@ def main() -> None:
         )
         LOG.info("Warehouse rebuild completed: %s", artifacts)
         for key, value in artifacts.items():
+            print(f"{key}={value}")
+        return
+
+    if args.command == "cross-era-audit":
+        LOG.info(
+            "Running cross-era audit: legacy_dir=%s simfin_dir=%s reports_dir=%s year=%d",
+            args.legacy_dir,
+            args.simfin_dir,
+            args.reports_dir,
+            args.year,
+        )
+        try:
+            result = run_cross_era_audit_from_dirs(
+                legacy_dir=args.legacy_dir,
+                simfin_dir=args.simfin_dir,
+                reports_dir=args.reports_dir,
+                year=args.year,
+            )
+        except CrossEraContradictionError as error:
+            # The library raises; translating to an exit code is the CLI's job.
+            LOG.error("Cross-era audit failed: %s", error)
+            print(f"contradiction_fields={','.join(error.fields)}")
+            print(f"report_path={error.report_path}")
+            raise SystemExit(1) from error
+        LOG.info("Cross-era audit completed: %s", result)
+        for key, value in result.items():
             print(f"{key}={value}")
         return
 
