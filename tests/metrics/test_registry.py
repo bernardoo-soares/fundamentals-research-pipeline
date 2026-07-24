@@ -31,3 +31,30 @@ def test_registry_metric_computes_expected_value() -> None:
     rev10 = next(m for m in REGISTRY if m.metric_id == "revenue_cagr_10y")
     pts = {p.as_of_year: p for p in rev10.compute(frame)}
     assert abs(pts[2022].value - 0.10) < 1e-6
+
+
+def _metric(metric_id: str):
+    return next(m for m in REGISTRY if m.metric_id == metric_id)
+
+
+def test_dividend_metric_reads_dvy_not_dvpq() -> None:
+    """dvpq is preferred dividends; dvy is total. Version bumps on the change."""
+    metric = _metric("dividend_payer_years_10y")
+    assert "dvy_annual" in metric.formula
+    assert "dvpq" not in metric.formula
+    assert metric.version == "2"
+
+
+def test_dividend_metric_caveat_removed() -> None:
+    """The cross-era caveat described a defect that is now fixed."""
+    assert "KNOWN LIMITATION" not in _metric("dividend_payer_years_10y").formula
+
+
+def test_eps_metric_carries_derivation_caveat() -> None:
+    """epspxq is as-reported in legacy but derived in SimFin -- irreducible."""
+    assert "derived" in _metric("eps_up_year_fraction_10y").formula.lower()
+
+
+def test_buyback_metric_carries_era_divergence_note() -> None:
+    """prstkcy is gross repurchase in legacy but net equity flow in SimFin."""
+    assert "net" in _metric("buyback_years_10y").formula.lower()

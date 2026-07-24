@@ -30,8 +30,12 @@ REGISTRY: tuple[TrendMetric, ...] = (
         cagr_metric(col("req_q4"), 10),
     ),
     TrendMetric(
-        "eps_up_year_fraction_10y", "1", 10,
-        "fraction of YoY increases in epspxq_annual over the 10y window",
+        "eps_up_year_fraction_10y", "2", 10,
+        "fraction of YoY increases in epspxq_annual over the 10y window "
+        "(NOTE: epspxq is as-reported basic EPS in the legacy era but is "
+        "derived as NI(common)/shares(basic) in the SimFin era, which publishes "
+        "no EPS column at all — an irreducible declared divergence, see "
+        "contracts/field_era_semantics.py)",
         up_year_fraction_metric(col("epspxq_annual"), 10),
     ),
     TrendMetric(
@@ -46,15 +50,15 @@ REGISTRY: tuple[TrendMetric, ...] = (
     ),
     TrendMetric(
         "buyback_years_10y", "1", 10,
-        "count of 10y window years with prstkcy_annual > 0",
+        "count of 10y window years with prstkcy_annual > 0 "
+        "(NOTE: legacy Compustat prstkcy is gross repurchase while SimFin is "
+        "net equity flow — a declared divergence with aligned magnitudes, see "
+        "contracts/field_era_semantics.py)",
         count_years_metric(col("prstkcy_annual"), 0.0, 10),
     ),
     TrendMetric(
-        "dividend_payer_years_10y", "1", 10,
-        "count of 10y window years with dvpq_annual > 0 "
-        "(KNOWN LIMITATION: dvpq has inconsistent cross-era semantics in Stage 1 — "
-        "legacy Compustat = preferred dividends, SimFin = total dividends — so this "
-        "reads ~0 for genuine payers pre-2023 until the Stage 1 mapping is fixed)",
-        count_years_metric(col("dvpq_annual"), 0.0, 10),
+        "dividend_payer_years_10y", "2", 10,
+        "count of 10y window years with dvy_annual > 0",
+        count_years_metric(col("dvy_annual"), 0.0, 10),
     ),
 )
