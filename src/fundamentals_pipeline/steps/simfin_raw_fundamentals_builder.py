@@ -348,7 +348,10 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["prstkcq"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity")
     out["capxq"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles")
     out["cheq"] = _numeric_series(frame, "Cash, Cash Equivalents & Short Term Investments")
-    out["dvpq"] = _positive_outflow(frame, "Dividends Paid")
+    # dvpq is PREFERRED dividends by the Compustat definition. SimFin
+    # publishes no preferred-dividend column, so this is null in the SimFin
+    # era; total dividends are carried by `dvy` from the annual cashflow.
+    out["dvpq"] = _empty_numeric_series(frame)
     out["cshfdq"] = _numeric_series(frame, "Shares (Diluted)")
     out["cshoq"] = _numeric_series(frame, "Shares (Basic)")
 

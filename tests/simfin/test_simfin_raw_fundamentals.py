@@ -164,6 +164,7 @@ def _build_cache(cache_dir) -> None:
                 "Net Cash from Operating Activities": 120.0,
                 "Change in Fixed Assets & Intangibles": -36.0,
                 "Cash from (Repurchase of) Equity": -28.0,
+                "Dividends Paid": -12.0,
             }
         ],
         [
@@ -175,6 +176,7 @@ def _build_cache(cache_dir) -> None:
             "Net Cash from Operating Activities",
             "Change in Fixed Assets & Intangibles",
             "Cash from (Repurchase of) Equity",
+            "Dividends Paid",
         ],
     )
 
@@ -409,7 +411,10 @@ def test_build_simfin_raw_fundamentals_writes_yearly_outputs_and_reports(tmp_pat
     assert aapl["lctq"] == 0.00004
     assert aapl["prstkcq"] == 0.000007
     assert aapl["capxq"] == 0.000009
-    assert aapl["dvpq"] == 0.000003
+    # dvpq is preferred dividends; SimFin has no such column, so it is null.
+    # Total dividends live in dvy (annual "Dividends Paid" -12.0 -> 1.2e-5).
+    assert pd.isna(aapl["dvpq"])
+    assert aapl["dvy"] == 0.000012
     assert aapl["epspxq"] == 2.0
     assert aapl["oancfy"] == 0.00012
     assert aapl["capxy"] == 0.000036
@@ -694,3 +699,33 @@ def test_cli_simfin_raw_fundamentals_invokes_pipeline(monkeypatch, capsys) -> No
     assert captured["end_year"] == 2025
     assert captured["refresh_quarterly"] is True
     assert captured["quarterly_refresh_days"] == 0
+
+
+def test_simfin_dvpq_is_null_and_dvy_carries_total_dividends(tmp_path) -> None:
+    """dvpq means PREFERRED dividends (Compustat definition).
+
+    SimFin publishes no preferred-dividend column, so the honest value is
+    null. Total dividends now live in `dvy`, sourced from the annual cashflow
+    "Dividends Paid". Previously dvpq was mapped to the total, which made
+    dividend_payer_years_10y read ~0 for genuine payers before 2023.
+    """
+    cache_dir = tmp_path / "simfin_cache"
+    _build_cache(cache_dir)
+
+    universe_path = tmp_path / "universe.csv"
+    pd.DataFrame({"ticker": ["AAPL"]}).to_csv(universe_path, index=False)
+
+    artifacts = build_simfin_raw_fundamentals(
+        universe_path=universe_path,
+        output_dir=tmp_path / "processed",
+        reports_dir=tmp_path / "reports",
+        start_year=2023,
+        end_year=2023,
+        connector=SimfinConnector(data_dir=cache_dir),
+    )
+
+    year_df = pd.read_csv(artifacts["processed_2023"])
+    aapl = year_df[year_df["ticker"] == "AAPL"].iloc[0]
+    assert pd.isna(aapl["dvpq"])
+    # annual "Dividends Paid" -12.0 -> positive spend 12.0 -> published 1.2e-5
+    assert aapl["dvy"] == 0.000012
