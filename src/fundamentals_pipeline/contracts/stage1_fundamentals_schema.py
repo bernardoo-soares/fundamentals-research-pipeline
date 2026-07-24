@@ -54,6 +54,37 @@ EXTENDED_RAW_FIELDS: tuple[str, ...] = (
     "rectq",
 )
 
+# Fields that cannot be negative under any accounting treatment. A negative
+# value here is a provider defect, not a business fact, so it is rejected
+# rather than propagated -- a halved revenue figure is worse than a null one.
+#
+# Deliberately conservative: fields that CAN legitimately be negative are
+# excluded, including niq and oiadpq (losses), xintq and txtq (net interest
+# income, tax benefits), oancfq and capxq (net outflows/disposals), prstkcy
+# (SimFin states net equity flow), req and ceqq (accumulated deficits),
+# ivltq and tstkq (sign conventions vary across providers).
+NON_NEGATIVE_FIELDS: tuple[str, ...] = (
+    "saleq",
+    "cogsq",
+    "atq",
+    "actq",
+    "lctq",
+    "ltq",
+    "cheq",
+    "invtq",
+    "rectq",
+    "ppentq",
+    "gdwlq",
+    "xsgaq",
+    "xrdq",
+    "dpq",
+    "dlcq",
+    "dlttq",
+    "cshfdq",
+    "cshoq",
+    "cshopq",
+)
+
 PER_SHARE_FIELDS: tuple[str, ...] = ("epspxq",)
 SHARE_COUNT_FIELDS: tuple[str, ...] = (
     "cshfdq",

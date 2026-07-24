@@ -44,6 +44,22 @@ LEGACY_SOURCE_COLUMN_OVERRIDES: dict[str, str] = {
     # relative difference 0.0000). See contracts/field_era_semantics.py.
     "req": "reunaq",
 }
+
+# Canonical field -> legacy source columns summed, where no single Compustat
+# column carries the concept the other provider publishes. Summed, never
+# fallback-chained: a null part is treated as absent-and-zero only where that
+# is validated by measurement (see below).
+LEGACY_SOURCE_COLUMN_SUMS: dict[str, tuple[str, ...]] = {
+    # SimFin publishes one equity line, "Total Equity", which includes
+    # noncontrolling interests. Compustat `ceqq` is Common/Ordinary Equity and
+    # excludes them. Measured on the FY2023 overlap: ceqq agrees 64.7%, teqq
+    # 86.3%, seqq+mibtq 94.0%. `mibtq` is null for 5.1% of rows and exactly
+    # zero for 45.6% of those present; treating null as zero holds agreement at
+    # 94.0% while recovering those rows, which is the measurement that
+    # justifies it -- a company that reports no noncontrolling-interest line
+    # has none.
+    "ceqq": ("seqq", "mibtq"),
+}
 LEGACY_TICKER_ALIASES: dict[str, tuple[str, ...]] = {
     "GOOG": ("GOOG", "GOOGL"),
     "GOOGL": ("GOOGL", "GOOG"),
@@ -105,6 +121,7 @@ def _legacy_input_columns() -> set[str]:
         "tstkq",
         *LEGACY_STAGE1_FIELDS,
         *LEGACY_SOURCE_COLUMN_OVERRIDES.values(),
+        *(c for parts in LEGACY_SOURCE_COLUMN_SUMS.values() for c in parts),
     }
 
 
@@ -151,6 +168,26 @@ def _apply_source_column_overrides(
     file, which is indistinguishable downstream from genuinely absent data, so
     it is logged rather than applied silently.
     """
+    for canonical, parts in LEGACY_SOURCE_COLUMN_SUMS.items():
+        if parts[0] not in df.columns:
+            LOG.warning(
+                "Legacy source column %r for canonical %r is absent from %s; "
+                "%r will be null for all %d rows of this file.",
+                parts[0], canonical, source_file or "<unknown file>",
+                canonical, len(df),
+            )
+            df[canonical] = pd.NA
+            continue
+        total = pd.to_numeric(df[parts[0]], errors="coerce")
+        for extra in parts[1:]:
+            addend = (
+                pd.to_numeric(df[extra], errors="coerce")
+                if extra in df.columns
+                else pd.Series(0.0, index=df.index)
+            )
+            total = total + addend.fillna(0.0)
+        df[canonical] = total
+
     for canonical, source in LEGACY_SOURCE_COLUMN_OVERRIDES.items():
         if source in df.columns:
             df[canonical] = pd.to_numeric(df[source], errors="coerce")

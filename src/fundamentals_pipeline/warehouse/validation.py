@@ -89,3 +89,22 @@ def build_health_report(
     output_path = directory / f"warehouse_health_{start_year}_{end_year}.csv"
     report.to_csv(output_path, index=False)
     return str(output_path)
+
+
+def write_plausibility_violations(
+    violations: pd.DataFrame,
+    *,
+    reports_dir: str | Path,
+    start_year: int,
+    end_year: int,
+) -> str:
+    """Persist the values rejected by the plausibility gate.
+
+    Written even when empty, so a run always states what it rejected rather
+    than leaving the reader to infer it from an absent file.
+    """
+    directory = Path(reports_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    output_path = directory / f"plausibility_violations_{start_year}_{end_year}.csv"
+    violations.to_csv(output_path, index=False)
+    return str(output_path)
