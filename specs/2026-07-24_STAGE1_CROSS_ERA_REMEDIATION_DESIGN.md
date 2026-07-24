@@ -554,6 +554,55 @@ Per `AGENTS.md` §S3 and §S4.4–S4.6:
 5. `dividend_payer_years_10y` reads plausibly across the full 10-year window.
 6. No hardcoded era boundary remains in `warehouse/` or `steps/`.
 
+## 9.1 Code-review findings addressed (2026-07-24)
+
+A review of the branch surfaced ten findings; nine were valid and are fixed in
+commit `487410a`. Recorded because several were failure modes the branch's own
+principles were meant to prevent.
+
+1. **Data-destroying default (critical).** `stage1-resolve-era` read the
+   staging directories while both builders defaulted `--output-dir` to
+   `data/processed`, so the documented default sequence resolved two
+   nonexistent directories, wrote header-only CSVs over every published Stage 1
+   year, and exited 0. The local runs escaped it only because explicit
+   `--output-dir` flags were passed. Fixed on both sides: staging directory
+   names are declared once in `contracts/era_resolution.py` and shared by the
+   builders' output defaults and the resolver's input defaults, and
+   `resolve_stage1_era` now raises when neither provider staged anything.
+2. **`COUNT(DISTINCT source_era) = 1` treated partially-unprovenanced years as
+   pure**, because SQL `COUNT DISTINCT` ignores NULLs -- contradicting the
+   comment above it and the guarantee `require_single_era` depends on.
+3. **`require_single_era` overwrote existing reason codes**, re-reporting
+   `missing_input` and `negative_base` nulls as `mixed_era_window` and hiding
+   genuine data gaps behind a provenance explanation.
+4. **`requires_single_era` was inert** -- nothing verified that a metric
+   declaring it was wrapped. `registry.validate_registry()` now rejects a
+   declaration without enforcement, at import time.
+5. **The audit dropped zero-denominator rows from `agreement_rate`**, so a
+   field could disagree on most of the corpus and still score AGREE, and the
+   rate used a smaller denominator than the reported `n_compared`.
+6. **`legacy-stage1-audit` compared published files against the builder-only
+   column set**, flagging every correct file once `source_era` was published.
+7. **A missing declared source column nulled a canonical field silently**; now
+   logged with file name and row count.
+8. **The era-resolution docstring overclaimed** that no ticker switches
+   provider mid-series. A ticker with complete legacy FY2023 and complete
+   SimFin FY2024 does switch; `require_single_era` already handles this by
+   checking per-row `source_era` rather than assuming a global cutover.
+9. **README ordering** placed `stage1-resolve-era` after `warehouse-rebuild`,
+   which cannot work since the rebuild requires the `source_era` that
+   resolution produces.
+
+One finding was **not** valid: the removed `tstkq <- tstkcq` branch was
+genuinely dead code. `tstkcq` appears in 0 of 300 legacy extract files, and the
+branch was additionally gated on `tstkq` being absent, which it never is. Noted
+in the builder docstring rather than reverted.
+
+Post-fix verification on the real corpus: audit verdicts unchanged
+(14 CONTRADICTION / 10 agree / 6 insufficient_overlap / 6 divergent_declared),
+`metrics_trend` still 42,557 rows, and 0 unprovenanced rows in either warehouse
+layer.
+
 ## 10. Known limitations (stated, not hidden)
 
 1. The reconciliation window is FY2023 only; FY2024 has 28 overlapping tickers,
