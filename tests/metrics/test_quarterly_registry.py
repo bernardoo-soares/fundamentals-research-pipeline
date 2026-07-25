@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pandas as pd
 import pytest
 
@@ -32,6 +34,47 @@ def test_validate_rejects_duplicate_ids() -> None:
     dup = QUARTERLY_REGISTRY + (QUARTERLY_REGISTRY[0],)
     with pytest.raises(ValueError):
         validate_quarterly_registry(dup)
+
+
+def _replace_metric(metric_id: str, **overrides) -> tuple:
+    """Build a registry with one metric's fields overridden, for validator tests."""
+    updated = []
+    for metric in QUARTERLY_REGISTRY:
+        if metric.metric_id == metric_id:
+            metric = replace(metric, **overrides)
+        updated.append(metric)
+    return tuple(updated)
+
+
+def test_validate_accepts_a_valid_era_restriction() -> None:
+    registry = _replace_metric(
+        "treasury_stock_present", supported_eras=frozenset({SourceEra.LEGACY})
+    )
+    validate_quarterly_registry(registry)  # must not raise
+
+
+def test_validate_rejects_unknown_era_value() -> None:
+    """A typo'd era (e.g. a bare string instead of SourceEra.LEGACY) must not
+    pass silently -- it would null every row of the metric with
+    era_not_supported and raise nothing, a silent total coverage wipe."""
+    registry = _replace_metric(
+        "treasury_stock_present", supported_eras=frozenset({"legacy"})
+    )
+    with pytest.raises(ValueError, match="treasury_stock_present"):
+        validate_quarterly_registry(registry)
+
+
+def test_validate_rejects_empty_supported_eras() -> None:
+    """An empty frozenset would null every row of the metric; None (every
+    era) is the correct spelling of 'no restriction', not an empty set."""
+    registry = _replace_metric("treasury_stock_present", supported_eras=frozenset())
+    with pytest.raises(ValueError, match="treasury_stock_present"):
+        validate_quarterly_registry(registry)
+
+
+def test_validate_accepts_supported_eras_none() -> None:
+    registry = _replace_metric("treasury_stock_present", supported_eras=None)
+    validate_quarterly_registry(registry)  # must not raise
 
 
 # --- Real AAPL FY2023 corpus (warehouse; matches Apple's 10-K to the $M) ---

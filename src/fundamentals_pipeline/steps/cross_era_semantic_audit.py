@@ -261,16 +261,16 @@ def run_cross_era_audit(
     report_path = directory / f"cross_era_reconciliation_{year}.csv"
     report.to_csv(report_path, index=False)
 
+    pooled_rows = report[SOURCE_FAMILY_COLUMN] == POOLED_FAMILY
     contradictions = tuple(
         report.loc[
-            (report["verdict"] == Verdict.CONTRADICTION)
-            & (report[SOURCE_FAMILY_COLUMN] == POOLED_FAMILY),
+            pooled_rows & (report["verdict"] == Verdict.CONTRADICTION),
             "field",
         ].tolist()
     )
     result: dict[str, object] = {
         "report_path": str(report_path),
-        "fields_compared": int(len(report)),
+        "fields_compared": int(pooled_rows.sum()),
         "contradiction_count": len(contradictions),
         "contradiction_fields": contradictions,
     }

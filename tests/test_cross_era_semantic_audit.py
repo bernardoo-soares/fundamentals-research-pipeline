@@ -291,6 +291,49 @@ def test_reconcile_reports_per_family_rows():
     assert families["banks"] == 0.0
 
 
+def test_fields_compared_counts_distinct_fields_not_report_rows(tmp_path):
+    """Regression: per-family rows must not inflate the operator-facing count.
+
+    `run_cross_era_audit` emits one pooled row per field plus one row per
+    SimFin family. `fields_compared` must report the number of distinct
+    fields actually compared (1 here), not `len(report)` (which is 1 pooled +
+    2 family rows = 3 for this fixture) -- the CLI prints this number to the
+    operator, so it must describe what was compared, not how many rows the
+    report happens to contain.
+    """
+    general_tickers = [f"G{i}" for i in range(_N // 2)]
+    banks_tickers = [f"B{i}" for i in range(_N // 2)]
+    tickers = general_tickers + banks_tickers
+    legacy = pd.DataFrame(
+        {
+            "ticker": tickers,
+            "year": [2023] * _N,
+            "quarter": [1] * _N,
+            "oiadpq": [100.0] * _N,
+        }
+    )
+    simfin = pd.DataFrame(
+        {
+            "ticker": tickers,
+            "year": [2023] * _N,
+            "quarter": [1] * _N,
+            "oiadpq": [100.0] * len(general_tickers) + [900.0] * len(banks_tickers),
+            "source_family": ["general"] * len(general_tickers)
+            + ["banks"] * len(banks_tickers),
+        }
+    )
+    result = run_cross_era_audit(
+        legacy_frame=legacy,
+        simfin_frame=simfin,
+        reports_dir=tmp_path,
+        year=2023,
+        fields=("oiadpq",),
+    )
+    report = pd.read_csv(tmp_path / "cross_era_reconciliation_2023.csv")
+    assert len(report) == 3, "sanity: one pooled row + two family rows"
+    assert result["fields_compared"] == 1
+
+
 def test_reconcile_without_source_family_reports_pooled_only():
     """The column is optional; absence must not break the audit."""
     frame = pd.DataFrame(

@@ -286,16 +286,21 @@ rebuilt from the CSVs.
 ## 5. Testing
 
 Synthetic fixtures test mechanics; golden tests pin real hand-verified values
-(S4.4).
+(S4.4). Only item 1 below is a golden test — it pins a real, published value.
+Items 2 and 3 exercise the same mechanism with invented fixtures and are
+synthetic mechanics tests, not golden tests, per S4.4's distinction.
 
-1. **Golden — legacy value preserved.** One real ticker-quarter's
-   `interest_pct_operating_income` from the legacy era, hand-derived from the
-   published corpus with the arithmetic written into the test, asserted
-   unchanged by this slice.
-2. **Golden — SimFin restricted.** A real SimFin-era ticker-quarter that
-   carries a value today asserts null + `era_not_supported` after the change.
-3. **Golden — bank null.** A real SimFin-era bank ticker-quarter asserts null
-   `oiadpq` in Stage 1 output.
+1. **Golden — legacy value preserved.** KO fiscal 2019
+   (`interest_pct_operating_income` = 946/10541 = 0.089744806), hand-derived
+   from the published corpus with the arithmetic written into the test,
+   asserted unchanged by this slice.
+2. **Synthetic — SimFin restricted.** `tests/metrics/test_quarterly_builder.py`
+   builds an invented ticker "A" (`xintq=10.0`, `oiadpq=500.0`, SimFin era) and
+   asserts null + `era_not_supported` after the change. It proves the
+   mechanism, not a real published figure.
+3. **Synthetic — bank null.** `tests/simfin/test_simfin_raw_fundamentals.py`
+   builds a synthetic BAC frame and asserts null `oiadpq` in Stage 1 output.
+   It proves the family-branch null-out, not a real published figure.
 4. **Unit — `apply_era_restriction`.** Restricts outside the set; passes
    through when `supported_eras is None`; nulls unknown (`None`) provenance;
    preserves `year`/`quarter`/`source_era` on nulled points.
@@ -345,3 +350,43 @@ Recorded in this spec and the PR body; not committed as test data.
 5. **No interest-coverage signal exists for the SimFin era** after this slice.
    That is the intended outcome — an absent signal rather than a false one —
    but it is a real coverage loss and the future UI must show it as such.
+6. **The per-family split this slice added immediately found more of the same
+   defect class, and it is not fixed here (S4.7 disclosure).** Measured in
+   `data/reports/cross_era_reconciliation_2023.csv` — not re-derived, quoted
+   verbatim:
+
+   | field | family | agreement | n | median rel. diff | note |
+   |---|---|---|---|---|---|
+   | `saleq` | banks | 0.000 | 43 | 0.5328 | magnitude ratio 1.374 |
+   | `saleq` | insurance | 0.627 | 51 | 0.0046 | |
+   | `saleq` | general | 0.906 | 1,333 | 0.0000 | |
+   | `saleq` | POOLED | 0.869 | — | — | verdict `agree`: clears its declared 0.80 `min_agreement_rate` |
+   | `cheq` | banks | 0.000 | — | — | pooled 0.648 |
+   | `cheq` | insurance | 0.000 | — | — | |
+   | `rectq` | insurance | 0.100 | — | — | pooled 0.547 |
+   | `ivltq` | insurance | 0.000 | — | — | pooled 0.397 |
+
+   `saleq` is the most consequential of the four. It passes the audit as
+   `agree` on its pooled 0.869 rate against its declared 0.80 threshold, so no
+   guard fires — while banks agree on 0.000 of rows at a median relative
+   difference of 0.5328 and a 1.374 magnitude ratio. This is the same
+   family-proxy shape as the `oiadpq` defect this slice fixed: a pooled rate
+   that clears threshold hides a family with no real agreement at all. `saleq`
+   feeds the shipped `net_margin` metric and every `revenue_cagr_*` trend
+   metric, so bank revenue currently carries an undisclosed definitional break
+   across the provider boundary in numbers that are already live.
+
+   The `saleq` entry's `threshold_justification` in
+   `contracts/field_era_semantics.py` asserts "the median relative difference
+   is exactly 0.0000." That is true of the general family (0.0000, n=1,333)
+   and false of banks (0.5328, n=43). It is a pooled-data claim that the
+   per-family split now refutes, and it is left as-is here — this item is
+   disclosure only, not a fix.
+
+   This is deliberately **not fixed in this slice**. Each of `saleq`, `cheq`,
+   `rectq`, and `ivltq` needs the same measured, per-field investigation
+   `oiadpq` received in §2 before its declaration or its metric consumers can
+   be changed responsibly. It is the recommended next slice.
+
+   All figures above are measured, not expected (S4.7), and come verbatim from
+   `data/reports/cross_era_reconciliation_2023.csv`.

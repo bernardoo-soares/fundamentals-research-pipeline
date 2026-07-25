@@ -19,6 +19,7 @@ from .quarterly import (
 )
 
 TREASURY_PRESENCE_THRESHOLD = 0.0
+_VALID_ERAS = frozenset(SourceEra)
 
 QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     QuarterMetric(
@@ -72,12 +73,32 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
 def validate_quarterly_registry(
     registry: tuple[QuarterMetric, ...] = QUARTERLY_REGISTRY,
 ) -> None:
-    """Reject a registry with duplicate metric ids."""
+    """Reject a registry with duplicate metric ids or an inert era restriction.
+
+    `supported_eras=None` means every era and always passes. A non-None value
+    must be a non-empty set of valid `SourceEra` members: a typo'd era value
+    would never match any row's `source_era`, so `apply_era_restriction`
+    would silently null every row of that metric with `era_not_supported`
+    (a total coverage wipe) instead of raising. An empty frozenset is
+    rejected for the same reason -- it nulls every row by construction.
+    """
     seen: set[str] = set()
     for metric in registry:
         if metric.metric_id in seen:
             raise ValueError(f"Duplicate metric_id in registry: {metric.metric_id}")
         seen.add(metric.metric_id)
+        if metric.supported_eras is not None:
+            if not metric.supported_eras:
+                raise ValueError(
+                    f"{metric.metric_id}: supported_eras is an empty set, which "
+                    "would null every row of this metric with era_not_supported."
+                )
+            unknown = metric.supported_eras - _VALID_ERAS
+            if unknown:
+                raise ValueError(
+                    f"{metric.metric_id}: supported_eras contains values that "
+                    f"are not valid SourceEra members: {sorted(unknown)}."
+                )
 
 
 validate_quarterly_registry()
