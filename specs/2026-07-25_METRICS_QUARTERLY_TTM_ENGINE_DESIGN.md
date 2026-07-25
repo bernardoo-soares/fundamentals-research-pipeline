@@ -1,6 +1,21 @@
 # Stage 2 — `metrics_quarterly` TTM & Point-in-Time Ratio Engine (slice 1)
 
-Status: DESIGN — 2026-07-25. Not yet implemented.
+Status: IMPLEMENTED — 2026-07-25 (branch `feature/metrics-quarterly-ttm`).
+
+**Real-corpus verification (2026-07-25 build, 2006–2024, 33,692 quarters × 9
+metrics = 303,228 rows):** 0 `inf`/`NaN` in any stored value; 0 value-XOR-
+reason violations; 0 quality-flags on a null value. Non-null coverage per
+metric: net_margin 94.2%, roa 94.2%, roe 90.5%, debt_to_equity_adj 95.9%,
+current_ratio 81.7%, st_lt_debt_ratio 84.3%, lt_debt_payback_years 85.4%,
+interest_pct_operating_income 78.5%, treasury_stock_present 93.9%.
+`mixed_era_window` (856 rows) occurs on `interest_pct_operating_income` **only**
+— the single non-equivalent TTM leg (`xintq`) — confirming the guard fires
+exactly where intended and nowhere else. `tstk_unavailable` flags 1,415
+`debt_to_equity_adj` rows (SimFin's null-`tstkq` fallback). Spot check: AAPL
+2023Q4 net_margin 0.25306 (Apple FY2023 net income 96,995 / revenue 383,285 =
+25.3%), roa 0.27510, roe 1.56076, debt_to_equity_adj 4.67346 (`tstk_unavailable`).
+Measured finding: SimFin populates `xintq` sparsely, so `interest_pct` is
+`missing_input` for most SimFin-era quarters (not a defect — no imputation).
 
 This slice adds the second Stage 2 grain: `metrics_quarterly` (keyed by
 `ticker, year, quarter, metric_id`), holding point-in-time and trailing-twelve-
