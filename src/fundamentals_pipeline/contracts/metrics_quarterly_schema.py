@@ -13,7 +13,7 @@ from typing import Any
 
 from .metric_reason_codes import ReasonCode, validate_value_xor_reason
 
-METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.0"
+METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.1"
 
 # Advisory flags that co-exist with a present value. Distinct from reason codes,
 # which explain a null. `tstk_unavailable` records that debt_to_equity_adj was

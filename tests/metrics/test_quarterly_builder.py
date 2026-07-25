@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import duckdb
 import pandas as pd
+import pytest
 
+from fundamentals_pipeline.contracts.era_resolution import SourceEra
+from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
 from fundamentals_pipeline.metrics.quarterly_builder import build_metrics_quarterly
 
 
@@ -53,6 +56,49 @@ def test_build_is_idempotent(tmp_path) -> None:
     first = build_metrics_quarterly(warehouse_path=db)
     second = build_metrics_quarterly(warehouse_path=db)
     assert first["metrics_quarterly_rows"] == second["metrics_quarterly_rows"]
+
+
+def test_builder_applies_era_restriction(tmp_path):
+    """A SimFin-era row is nulled era_not_supported; legacy keeps its value.
+
+    Golden (real corpus, KO FY2019, legacy era):
+      xintq TTM  = 245 + 236 + 230 + 235   =    946
+      oiadpq TTM = 2560 + 3080 + 2623 + 2278 = 10541
+      946 / 10541 = 0.089744806
+    """
+    db = tmp_path / "research.duckdb"
+    ko = [
+        {"ticker": "KO", "year": 2019, "quarter": q, "xintq": x, "oiadpq": o,
+         "saleq": None, "niq": None, "atq": None, "ceqq": None, "ltq": None,
+         "tstkq": None, "dlcq": None, "dlttq": None, "actq": None,
+         "lctq": None, "source_era": str(SourceEra.LEGACY)}
+        for q, x, o in [(1, 245.0, 2560.0), (2, 236.0, 3080.0),
+                        (3, 230.0, 2623.0), (4, 235.0, 2278.0)]
+    ]
+    agilent = [
+        {"ticker": "A", "year": 2023, "quarter": q, "xintq": 10.0,
+         "oiadpq": 500.0, "saleq": None, "niq": None, "atq": None,
+         "ceqq": None, "ltq": None, "tstkq": None, "dlcq": None,
+         "dlttq": None, "actq": None, "lctq": None,
+         "source_era": str(SourceEra.SIMFIN)}
+        for q in (1, 2, 3, 4)
+    ]
+    _seed_quarterly(db, ko + agilent)
+
+    build_metrics_quarterly(warehouse_path=db)
+    conn = duckdb.connect(str(db), read_only=True)
+    rows = conn.execute(
+        "SELECT ticker, value, reason_code FROM metrics_quarterly "
+        "WHERE metric_id = 'interest_pct_operating_income' AND quarter = 4 "
+        "ORDER BY ticker"
+    ).fetchall()
+    conn.close()
+
+    by_ticker = {row[0]: row for row in rows}
+    assert by_ticker["A"][1] is None
+    assert by_ticker["A"][2] == ReasonCode.ERA_NOT_SUPPORTED
+    assert by_ticker["KO"][1] == pytest.approx(0.089744806, abs=1e-9)
+    assert by_ticker["KO"][2] is None
 
 
 def test_no_nan_or_inf_in_stored_values(tmp_path) -> None:

@@ -18,6 +18,7 @@ from ..contracts.metrics_quarterly_schema import (
     create_metrics_quarterly_ddl,
 )
 from ..warehouse.connection import open_warehouse
+from .quarterly import apply_era_restriction
 from .quarterly_registry import QUARTERLY_REGISTRY
 
 _SOURCE_TABLE = "fundamentals_quarterly"
@@ -32,7 +33,10 @@ def _compute_rows(
     rows: list[dict] = []
     for ticker, group in quarterly.groupby("ticker"):
         for metric in registry:
-            for point in metric.compute(group):
+            points = apply_era_restriction(
+                metric.compute(group), metric.supported_eras
+            )
+            for point in points:
                 rows.append(
                     {
                         "ticker": ticker,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from fundamentals_pipeline.contracts.era_resolution import SourceEra
 from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
 from fundamentals_pipeline.metrics.quarterly_registry import (
     QUARTERLY_REGISTRY,
@@ -109,6 +110,23 @@ def test_golden_roe_negative_equity_azo() -> None:
     p = _value_at("roe", frame, 2023, 4)
     assert p.value is None
     assert p.reason_code == ReasonCode.NEGATIVE_BASE
+
+
+def test_interest_pct_is_restricted_to_the_legacy_era():
+    """Both legs diverge across the boundary, so the metric is legacy-only."""
+    metric = next(
+        m for m in QUARTERLY_REGISTRY
+        if m.metric_id == "interest_pct_operating_income"
+    )
+    assert metric.supported_eras == frozenset({SourceEra.LEGACY})
+    assert metric.version == "2", "restricting the computation bumps the version"
+
+
+def test_every_other_metric_remains_unrestricted():
+    for metric in QUARTERLY_REGISTRY:
+        if metric.metric_id == "interest_pct_operating_income":
+            continue
+        assert metric.supported_eras is None, metric.metric_id
 
 
 def test_golden_interest_pct_mixed_era_abbv() -> None:

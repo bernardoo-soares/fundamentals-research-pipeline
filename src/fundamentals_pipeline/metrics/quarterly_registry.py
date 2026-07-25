@@ -7,6 +7,7 @@ dispatcher to edit (AGENTS.md S2.2).
 
 from __future__ import annotations
 
+from ..contracts.era_resolution import SourceEra
 from ..contracts.metrics_quarterly_schema import QuarterMetric
 from .quarterly import (
     debt_to_equity_adj_metric,
@@ -48,9 +49,16 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     ),
     QuarterMetric(
         "interest_pct_operating_income",
-        "1",
-        "xintq_ttm / oiadpq_ttm",
+        "2",
+        "xintq_ttm / oiadpq_ttm (LEGACY ERA ONLY: both legs diverge across "
+        "the provider boundary. SimFin reports xintq net of interest income "
+        "and sign-inverted (89.8% sign-flip), and oiadpq is a per-company "
+        "classification boundary (44.6% agreement, no remapping above 0.474). "
+        "Measured on 286 dual-era tickers: median step 1.906 across the "
+        "switch year, 29.0% flip the <15% verdict. SimFin-era rows are null "
+        "with era_not_supported rather than false.)",
         ttm_ratio("xintq", "oiadpq"),
+        supported_eras=frozenset({SourceEra.LEGACY}),
     ),
     QuarterMetric(
         "treasury_stock_present",
