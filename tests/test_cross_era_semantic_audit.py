@@ -250,3 +250,51 @@ def test_both_zero_counts_as_agreement():
     simfin = pd.DataFrame({**key, "dvy": [0.0] * n})
     row = reconcile_frames(legacy, simfin, fields=("dvy",)).iloc[0]
     assert row["agreement_rate"] == 1.0
+
+
+def test_reconcile_reports_per_family_rows():
+    """Pooling hid a 0.000-agreement family inside a 42% field.
+
+    Each family must independently clear MIN_OVERLAP_ROWS (20) so its rate is
+    a genuine measurement rather than an insufficient_overlap floor artifact
+    -- a family fixture below the floor would fail for the wrong reason.
+    """
+    general_tickers = [f"G{i}" for i in range(_N // 2)]
+    banks_tickers = [f"B{i}" for i in range(_N // 2)]
+    tickers = general_tickers + banks_tickers
+    legacy = pd.DataFrame(
+        {
+            "ticker": tickers,
+            "year": [2023] * _N,
+            "quarter": [1] * _N,
+            "oiadpq": [100.0] * _N,
+        }
+    )
+    simfin = pd.DataFrame(
+        {
+            "ticker": tickers,
+            "year": [2023] * _N,
+            "quarter": [1] * _N,
+            # general agrees exactly; banks disagrees well outside tolerance.
+            "oiadpq": [100.0] * len(general_tickers) + [900.0] * len(banks_tickers),
+            "source_family": ["general"] * len(general_tickers)
+            + ["banks"] * len(banks_tickers),
+        }
+    )
+    report = reconcile_frames(legacy, simfin, fields=("oiadpq",))
+
+    families = dict(
+        zip(report["source_family"], report["agreement_rate"], strict=True)
+    )
+    assert families["all"] == 0.5, "pooled rate still reported"
+    assert families["general"] == 1.0
+    assert families["banks"] == 0.0
+
+
+def test_reconcile_without_source_family_reports_pooled_only():
+    """The column is optional; absence must not break the audit."""
+    frame = pd.DataFrame(
+        {"ticker": ["AAPL"], "year": [2023], "quarter": [1], "oiadpq": [100.0]}
+    )
+    report = reconcile_frames(frame, frame, fields=("oiadpq",))
+    assert list(report["source_family"]) == ["all"]

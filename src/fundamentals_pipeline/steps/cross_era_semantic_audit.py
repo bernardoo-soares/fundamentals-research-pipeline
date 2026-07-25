@@ -22,6 +22,7 @@ from ..core.exceptions import CrossEraContradictionError
 
 RECONCILIATION_COLUMNS: tuple[str, ...] = (
     "field",
+    "source_family",
     "verdict",
     "n_compared",
     "agreement_rate",
@@ -38,6 +39,10 @@ RECONCILIATION_COLUMNS: tuple[str, ...] = (
 # Below this many jointly-present rows, a field's agreement is not measurable
 # and is reported as insufficient_overlap rather than as agreement.
 MIN_OVERLAP_ROWS = 20
+
+# Value of `source_family` on the pooled row that spans every family.
+POOLED_FAMILY = "all"
+SOURCE_FAMILY_COLUMN = "source_family"
 
 
 class Verdict(StrEnum):
@@ -107,14 +112,20 @@ def _field_row(
     legacy: pd.Series,
     simfin: pd.Series,
     field: str,
+    source_family: str = POOLED_FAMILY,
 ) -> dict[str, object]:
-    """Compute one field's reconciliation metrics against its declaration."""
+    """Compute one field's reconciliation metrics against its declaration.
+
+    `source_family` is stamped on the row as-given; it carries no null/failure
+    behaviour of its own and defaults to the pooled value `POOLED_FAMILY`.
+    """
     declaration = semantics_for(field)
     both = legacy.notna() & simfin.notna()
     n_compared = int(both.sum())
 
     row: dict[str, object] = {
         "field": field,
+        "source_family": source_family,
         "n_compared": n_compared,
         "null_rate_legacy": float(legacy.isna().mean()) if len(legacy) else 1.0,
         "null_rate_simfin": float(simfin.isna().mean()) if len(simfin) else 1.0,
@@ -181,13 +192,22 @@ def reconcile_frames(
             rows.append(_field_row(empty, empty, field))
             continue
         comparable = _comparable_rows(merged, field)
-        rows.append(
-            _field_row(
-                pd.to_numeric(comparable[left_column], errors="coerce"),
-                pd.to_numeric(comparable[right_column], errors="coerce"),
-                field,
-            )
-        )
+        left = pd.to_numeric(comparable[left_column], errors="coerce")
+        right = pd.to_numeric(comparable[right_column], errors="coerce")
+        rows.append(_field_row(left, right, field))
+
+        family_column = f"{SOURCE_FAMILY_COLUMN}_simfin"
+        if family_column not in comparable.columns:
+            family_column = SOURCE_FAMILY_COLUMN
+        if family_column in comparable.columns:
+            families = comparable[family_column].dropna().unique()
+            for family in sorted(str(value) for value in families):
+                mask = comparable[family_column].astype(str) == family
+                family_row = _field_row(
+                    left[mask], right[mask], field, source_family=family
+                )
+                family_row["verdict"] = None
+                rows.append(family_row)
     return pd.DataFrame(rows, columns=list(RECONCILIATION_COLUMNS))
 
 
@@ -242,7 +262,11 @@ def run_cross_era_audit(
     report.to_csv(report_path, index=False)
 
     contradictions = tuple(
-        report.loc[report["verdict"] == Verdict.CONTRADICTION, "field"].tolist()
+        report.loc[
+            (report["verdict"] == Verdict.CONTRADICTION)
+            & (report[SOURCE_FAMILY_COLUMN] == POOLED_FAMILY),
+            "field",
+        ].tolist()
     )
     result: dict[str, object] = {
         "report_path": str(report_path),

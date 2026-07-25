@@ -73,6 +73,11 @@ SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
 }
 SIMFIN_CASHFLOW_DA_COLUMN = "Depreciation & Amortization__cashflow"
 
+# Staging-side provenance: which SimFin family statement served the row. Kept
+# in the staged CSV so the cross-era audit can report agreement per family;
+# NOT part of STAGE1_OUTPUT_COLUMNS, so the published schema is unchanged.
+SOURCE_FAMILY_COLUMN = "source_family"
+
 
 def _normalize_ticker(value: object) -> str | None:
     """Normalize ticker strings to uppercase or return `None` when empty."""
@@ -456,10 +461,10 @@ def _write_year_partitions(
     for year in range(start_year, end_year + 1):
         year_path = output_dir / f"raw_fundamentals_{year}.csv"
         year_df = frame[frame["year"] == year].copy() if not frame.empty else pd.DataFrame(
-            columns=STAGE1_RAW_COLUMNS
+            columns=list(frame.columns)
         )
         if year_df.empty:
-            year_df = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
+            year_df = pd.DataFrame(columns=list(frame.columns))
         year_df.to_csv(year_path, index=False)
         artifacts[f"processed_{year}"] = str(year_path)
     return artifacts
@@ -694,8 +699,9 @@ def build_simfin_raw_fundamentals(
         normalized_selected.columns[: len(STAGE1_RAW_COLUMNS)].tolist()
     )
 
+    staged_columns = [*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN]
     year_outputs = _write_year_partitions(
-        normalized_selected[list(STAGE1_RAW_COLUMNS)],
+        normalized_selected[staged_columns],
         output_dir=resolved_output_dir,
         start_year=start_year,
         end_year=end_year,
