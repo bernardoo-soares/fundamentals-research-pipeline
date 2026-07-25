@@ -1,0 +1,295 @@
+# Stage 1/2 — `oiadpq` Cross-Era Remediation
+
+Status: DESIGN — 2026-07-25. Not implemented; no branch yet.
+
+Resolves one of the ten open Stage 1 CONTRADICTIONs recorded in
+`specs/2026-07-24_STAGE1_PLAUSIBILITY_AND_ERA_BATCH2_DESIGN.md` and in the
+reconciliation report `data/reports/cross_era_reconciliation_2023.csv`.
+`oiadpq` is declared `eras_equivalent=True` in
+`contracts/field_era_semantics.py` while agreeing on only **42.2%** of the
+FY2023 provider overlap — and it is the denominator of a metric that already
+ships values, `interest_pct_operating_income`.
+
+Investigation performed 2026-07-25 against the real corpus. Every number in §2
+was measured, not assumed (S4.7). The scripts were exploratory and are not
+committed; §2 records the findings so they need not be re-derived.
+
+## 1. Goal
+
+Make `oiadpq` mean exactly one thing, and stop `interest_pct_operating_income`
+from presenting a cross-era artifact as a business signal. Nothing in this
+slice may change a single legacy-era value.
+
+## 2. Root cause — two distinct defects under one verdict
+
+The pooled 42.2% hides two unrelated problems. Splitting the FY2023 overlap
+(1,422 comparable rows) by SimFin statement family separates them cleanly:
+
+| family | rows | tickers | agreement | median rel. diff |
+|---|---|---|---|---|
+| general | 1,319 | 331 | 0.446 | 0.0158 |
+| insurance | 51 | 13 | 0.098 | 0.0918 |
+| banks | 40 | 11 | **0.000** | **0.8992** |
+| *unattributed* | 12 | 3 | 0.583 | 0.0022 |
+
+The 12 unattributed rows matched no SimFin income file on the join key and are
+excluded from the per-family conclusions; they are listed for completeness so
+the four groups reconcile to the 1,422 comparable rows.
+
+### 2.1 Defect 1 — family proxy substitution (mapping bug, 24 tickers)
+
+`steps/simfin_raw_fundamentals_builder.py` assigns `oiadpq` in the block shared
+by all three families (line 338), *before* the family branch. The same builder
+deliberately nulls `xintq`, `cogsq`, `xsgaq`, `xrdq`, `actq`, `lctq` for
+`banks` and `insurance` because those concepts do not map. `oiadpq` was missed.
+
+SimFin's "Operating Income (Loss)" is a different aggregate in those files:
+
+- **banks:** `Net Revenue after Provisions − Total Non-Interest Expense`
+- **insurance:** derived after `Total Claims & Losses`
+
+Neither is Compustat's Operating Income After Depreciation. Publishing them as
+`oiadpq` is proxy substitution, which S4.2 classifies as imputation. The
+correct output is null.
+
+### 2.2 Defect 2 — irreducible classification boundary (general family)
+
+Measured against the 663 available Compustat columns, no remapping rescues it:
+
+| candidate | agreement | | candidate | agreement |
+|---|---|---|---|---|
+| `oiadpq` (current) | 0.443 | | `revtq − xoprq − dpq` | 0.453 |
+| `oiadpq + spiq` | **0.474** | | `oiadpq − spiq` | 0.267 |
+| `piq − nopiq + xintq` | 0.474 | | `oibdpq` | 0.003 |
+| `oibdpq − dpq` | 0.448 | | `saleq − cogsq − xsgaq` | 0.008 |
+
+These candidates are measured on the 1,311 general-family rows that also join
+to a raw Compustat record, so the `oiadpq` baseline reads 0.443 here against
+0.446 in the §2 table (1,319 rows). The eight-row difference is join coverage,
+not a discrepancy.
+
+The ceiling is 47.4%, far below the 0.90 threshold. For contrast, the two
+successful Stage 1 remediations moved `req` 23.3% → 95.8% (`reunaq`) and
+`ceqq` 64.7% → 94.0% (`seqq + mibtq`). Those had a right answer; this does not.
+
+Three hypotheses were tested and **rejected**:
+
+1. **Special/abnormal items.** Subtracting SimFin `Abnormal Gains (Losses)`
+   makes it worse (0.443 → 0.307). `spiq` is non-zero on 70.7% of rows and
+   SimFin `Abnormal` on 53.9%, but they do not reconcile.
+2. **Same cause as `cogsq`.** Spearman correlation of the two relative
+   differences is only 0.210; `oiadpq` agrees 50.6% where `cogsq` agrees
+   against 44.0% where it does not. Largely independent.
+3. **Fiscal-calendar misalignment.** The annual grain is *worse* (0.374 across
+   326 full-year tickers, against 0.446 quarterly).
+
+**The decisive measurement:** 73.9% of rows agree under *at least one* of the
+candidate definitions, while no single definition exceeds 47.4%. Which
+definition reconciles varies per company. That is a per-company judgement about
+what belongs above the operating line (restructuring, impairments, gains on
+sale, litigation) — not a formula that can be chosen once.
+
+Supporting shape: the legacy/SimFin ratio is symmetric about exactly 1.000
+(p25 1.000, p50 1.000, legacy higher on 50.5% of rows), dispersion
+p90/p10 = 1.21. So unlike `cogsq` there is no systematic bias to correct, and
+unlike `ppentq` (2.17) it is not a gross definitional offset — it is genuine
+per-row disagreement.
+
+**Verdict: irreducible by remapping.** The declaration is wrong, not the data.
+
+### 2.3 Effect on the shipped metric
+
+Across the 286 dual-era tickers carrying an `interest_pct_operating_income`
+value on both sides of their switch year: median |step| across the boundary
+**1.906**, and **83/286 = 29.0%** flip the platform spec's `< 15%` verdict.
+
+Attribution matters. That step is dominated by the **already-declared `xintq`**
+divergence (SimFin reports interest net of interest income and with the
+opposite sign; 89.8% sign-flip rate), not by `oiadpq`. Representative rows:
+AMCR 0.1104 → −0.1880, IP 0.1996 → −0.3063. `oiadpq` contributes a further
+~1.6% median denominator error (p90 27%).
+
+The conclusion is that **both legs of this metric break across the era
+boundary**, and it is the only metric consuming either field.
+
+### 2.4 Related gap found while measuring (not fixed here)
+
+Platform spec §6.2 declares `interest_pct_operating_income` applies to family
+`general` only, and decision D5 calls the interest test "meaningless" for
+financials — but the registry enforces no family restriction. SimFin-era bank
+rows come out `missing_input` only by luck (`xintq` is nulled there); *legacy*-
+era bank rows carry a real value the spec says should not exist. Recorded as an
+open item in §7; the era restriction in §3.3 does not address it.
+
+## 3. Scope — four changes
+
+### 3.1 Stage 1 builder: stop publishing a proxy as `oiadpq`
+
+Move the `oiadpq` assignment out of the shared block in
+`steps/simfin_raw_fundamentals_builder.py` into the family branch: mapped from
+`Operating Income (Loss)` for `general`, `_empty_numeric_series(frame)` for
+`banks` and `insurance` — the treatment `xintq`/`cogsq`/`xsgaq` already receive.
+
+This is a null-out, never a remap. SimFin publishes no bank- or
+insurance-equivalent of Compustat operating income.
+
+Downstream consequence: those ticker-years lose `oiadpq` in
+`fundamentals_annual` too, since annualization requires all four quarters. No
+live metric consumes them (SimFin-era `interest_pct` for banks is already
+`missing_input` because `xintq` is null there, and §3.3 restricts the metric to
+the legacy era regardless).
+
+### 3.2 Era semantics: `oiadpq` is not cross-era equivalent
+
+In `contracts/field_era_semantics.py`, change the `oiadpq` entry from
+`_equivalent_usd(...)` to an explicit `FieldEraSemantics` with
+`eras_equivalent=False` and a `divergence_note` recording §2.2 — the 47.4%
+candidate ceiling, the three rejected hypotheses, the 73.9%-under-some-
+definition finding, and the symmetric-ratio shape.
+
+Two consequences follow automatically:
+
+1. The audit verdict moves `CONTRADICTION` → `divergent_declared`, taking the
+   open contradiction count **10 → 9**.
+2. `metrics/quarterly.ttm_flow` already consults `field_era_semantics`, so a
+   TTM sum on `oiadpq` whose four-quarter window is not provably single-era
+   becomes `mixed_era_window` with no further code. This protects any future
+   metric (`operating_margin` being the obvious one) without additional work.
+
+### 3.3 Quarterly era restriction, and `interest_pct_operating_income`
+
+`metrics_quarterly` has no era-restriction mechanism; `requires_single_era` and
+`windows.require_single_era` are trend-grain only. This slice adds one.
+
+**Contract** (`contracts/metrics_quarterly_schema.py`):
+
+```python
+@dataclass(frozen=True)
+class QuarterMetric:
+    metric_id: str
+    version: str
+    formula: str
+    compute: ComputeFn
+    supported_eras: frozenset[str] | None = None   # None = every era
+```
+
+**Reason code** (`contracts/metric_reason_codes.py`): add
+`ERA_NOT_SUPPORTED = "era_not_supported"` to the closed set.
+
+**Pure enforcement** (`metrics/quarterly.py`):
+
+```python
+def apply_era_restriction(
+    points: list[QuarterPoint],
+    supported_eras: frozenset[str] | None,
+) -> list[QuarterPoint]:
+    """Null every point whose source_era falls outside the declared set.
+
+    A point with unknown provenance (source_era None) is nulled too: refusing
+    rather than assuming membership, mirroring windows.require_single_era.
+    Returns points unchanged when supported_eras is None.
+    """
+```
+
+**Central application** (`metrics/quarterly_builder.py`): the builder calls
+`apply_era_restriction` once per metric, immediately after `metric.compute`.
+Declaration and enforcement cannot drift, because the declared field is the
+sole input to the single enforcement call — no registry validator is needed to
+tie them, unlike the trend grain's flag/wrapper pair.
+
+**Registry** (`metrics/quarterly_registry.py`): bump
+`interest_pct_operating_income` to version `"2"`, set
+`supported_eras=frozenset({SourceEra.LEGACY})`, and state the restriction and
+its reason in the `formula` string.
+
+Value XOR reason continues to hold: restricted rows are null plus
+`era_not_supported`. Expected effect: ~1,491 SimFin non-null values become
+reasoned nulls; the 24,948 legacy values are untouched.
+
+### 3.4 Cross-era audit: report agreement per SimFin family
+
+The pooled audit is why a 0%-agreement field looked like a 42% field. Fix the
+instrument, not just this one reading:
+
+- `steps/simfin_raw_fundamentals_builder.py` retains `source_family` in the
+  **SimFin staged CSV** (`_staging_simfin/raw_fundamentals_<year>.csv`).
+  Staging-side provenance only — `STAGE1_OUTPUT_COLUMNS` is unchanged.
+- `steps/cross_era_semantic_audit.py` groups the comparison by that column and
+  reports per-family agreement alongside the pooled row. The legacy frame has
+  no family concept, so family attribution comes from the SimFin side.
+- Verdict logic is unchanged: it still keys off the pooled rate, so this slice
+  adds evidence without silently changing any field's verdict.
+
+## 4. Versions
+
+| unit | change |
+|---|---|
+| `interest_pct_operating_income` | version `1` → `2` (computation changed) |
+| `METRICS_QUARTERLY_PIPELINE_VERSION` | `metrics-quarterly-1.0` → `1.1` |
+| `oiadpq` era declaration | `eras_equivalent` True → False |
+
+A Stage 1 rebuild is required, so the warehouse and both metrics tables are
+rebuilt from the CSVs.
+
+## 5. Testing
+
+Synthetic fixtures test mechanics; golden tests pin real hand-verified values
+(S4.4).
+
+1. **Golden — legacy value preserved.** One real ticker-quarter's
+   `interest_pct_operating_income` from the legacy era, hand-derived from the
+   published corpus with the arithmetic written into the test, asserted
+   unchanged by this slice.
+2. **Golden — SimFin restricted.** A real SimFin-era ticker-quarter that
+   carries a value today asserts null + `era_not_supported` after the change.
+3. **Golden — bank null.** A real SimFin-era bank ticker-quarter asserts null
+   `oiadpq` in Stage 1 output.
+4. **Unit — `apply_era_restriction`.** Restricts outside the set; passes
+   through when `supported_eras is None`; nulls unknown (`None`) provenance;
+   preserves `year`/`quarter`/`source_era` on nulled points.
+5. **Property — invariants.** Value XOR reason holds across the new reason
+   code; no quality flag survives on a nulled value; `era_not_supported` is a
+   member of the closed set.
+6. **Contract — era semantics.** `validate_field_era_semantics()` accepts the
+   new `oiadpq` entry, and `eras_equivalent=False` requires its
+   `divergence_note`.
+7. **CLI dispatch** for any command touched (`tests/AGENTS.override.md` rule 5).
+
+## 6. Real-corpus verification (required before merge)
+
+Recorded in this spec and the PR body; not committed as test data.
+
+1. **Legacy immutability — the hard gate.** Every legacy-era
+   `interest_pct_operating_income` value is byte-identical to the pre-change
+   build. This slice must not move a single legacy number.
+2. Reason-code distribution on `metrics_quarterly`, showing ~1,491 new
+   `era_not_supported` rows confined to `interest_pct_operating_income`.
+3. Contradiction count drops **10 → 9**, with `oiadpq` reported
+   `divergent_declared`.
+4. The per-family audit table from §3.4, confirming banks 0.000 / insurance
+   0.098 / general 0.446 on the pre-change data and `oiadpq` absent for
+   banks/insurance after.
+5. `oiadpq` null-rate change in Stage 1 output, confirming exactly the
+   banks/insurance rows moved and no general-family row did.
+6. Invariants across all of `metrics_quarterly`: 0 `inf`/`NaN`, 0
+   value-XOR-reason violations, 0 quality flags on nulls.
+
+## 7. Out of scope / open items
+
+1. **The other nine contradictions.** `xsgaq` (0.288), `capxy`, `cheq`,
+   `cshfdq`, `cshoq`, `dpq`, `oancfy`, `rectq`, `xrdq`. Measured here:
+   `xsgaq` is a *separate* cause from `cogsq` (Spearman 0.210), contradicting
+   the earlier assumption that they share a cause-class.
+2. **Family restriction on metrics.** §2.4's gap — the registry cannot express
+   "general family only", and legacy-era bank rows therefore carry an
+   `interest_pct` the platform spec says is meaningless. Needs `source_family`
+   published to Stage 1 output, which spec D5 will require anyway to
+   renormalize the financials scorecard.
+3. **Publishing `source_family`** beyond staging.
+4. **`xintq` itself.** Its sign/basis divergence is irreducible and already
+   declared; restricting the metric to the legacy era sidesteps it rather than
+   resolving it. If a cross-era interest-coverage signal is ever needed, it
+   requires a source that states gross interest expense in both eras.
+5. **No interest-coverage signal exists for the SimFin era** after this slice.
+   That is the intended outcome — an absent signal rather than a false one —
+   but it is a real coverage loss and the future UI must show it as such.
