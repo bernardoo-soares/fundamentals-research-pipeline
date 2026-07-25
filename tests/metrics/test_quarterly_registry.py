@@ -5,6 +5,7 @@ import pytest
 
 from fundamentals_pipeline.contracts.era_resolution import SourceEra
 from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
+from fundamentals_pipeline.metrics.quarterly import apply_era_restriction
 from fundamentals_pipeline.metrics.quarterly_registry import (
     QUARTERLY_REGISTRY,
     validate_quarterly_registry,
@@ -129,9 +130,21 @@ def test_every_other_metric_remains_unrestricted():
         assert metric.supported_eras is None, metric.metric_id
 
 
-def test_golden_interest_pct_mixed_era_abbv() -> None:
-    # AbbVie (ABBV) at 2023Q1: xintq window 2022Q2-Q4 legacy gross (556/560/566)
-    # + 2023Q1 simfin net (-454). xintq non-equivalent -> mixed_era_window.
+def test_compute_layer_interest_pct_mixed_era_abbv() -> None:
+    """Pure compute-layer outcome only -- not what production publishes.
+
+    AbbVie (ABBV) at 2023Q1: xintq window 2022Q2-Q4 legacy gross (556/560/566)
+    + 2023Q1 simfin net (-454). xintq non-equivalent -> mixed_era_window when
+    `metric.compute` is called directly, which is what this assertion proves:
+    the TTM era guard fires on a non-equivalent field spanning two eras.
+
+    But `interest_pct_operating_income` is restricted to the legacy era
+    (see test_interest_pct_is_restricted_to_the_legacy_era), and this row's
+    source_era is "simfin". The builder calls `apply_era_restriction` after
+    `metric.compute`, and ERA_NOT_SUPPORTED overrides any pre-existing reason
+    code. So the value production actually publishes for this row is null
+    with ERA_NOT_SUPPORTED, not MIXED_ERA_WINDOW -- asserted below.
+    """
     frame = pd.DataFrame(
         [
             {"ticker": "ABBV", "year": 2022, "quarter": 2, "xintq": 556.0,
@@ -147,3 +160,15 @@ def test_golden_interest_pct_mixed_era_abbv() -> None:
     p = _value_at("interest_pct_operating_income", frame, 2023, 1)
     assert p.value is None
     assert p.reason_code == ReasonCode.MIXED_ERA_WINDOW
+
+    # What the builder actually publishes for this row: the metric is
+    # restricted to the legacy era, and era_not_supported overrides the
+    # compute-layer reason.
+    metric = next(
+        m for m in QUARTERLY_REGISTRY
+        if m.metric_id == "interest_pct_operating_income"
+    )
+    published = apply_era_restriction(metric.compute(frame), metric.supported_eras)
+    row = next(pt for pt in published if pt.year == 2023 and pt.quarter == 1)
+    assert row.value is None
+    assert row.reason_code == ReasonCode.ERA_NOT_SUPPORTED
