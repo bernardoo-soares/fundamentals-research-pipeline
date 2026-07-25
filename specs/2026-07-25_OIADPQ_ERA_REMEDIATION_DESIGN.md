@@ -1,6 +1,58 @@
 # Stage 1/2 — `oiadpq` Cross-Era Remediation
 
-Status: DESIGN — 2026-07-25. Not implemented; no branch yet.
+Status: IMPLEMENTED — 2026-07-25 (branch `feature/oiadpq-era-remediation`).
+
+**Real-corpus verification (2026-07-25 rebuild, 2006–2024, 33,692 quarters × 9
+metrics = 303,228 rows, `metrics-quarterly-1.1`).** Measured, not expected:
+
+*Stage 1.* `oiadpq` in the FY2023 SimFin staged frame is now non-null for
+1,429/1,429 general rows and **0/47 banks, 0/59 insurance**. `source_family` is
+present in the staged CSV and absent from the published Stage 1 CSV, as designed.
+Era resolution is unchanged at 30,660 legacy / 3,032 SimFin rows.
+
+*Audit.* Contradictions **10 → 9**; `oiadpq` is now `divergent_declared`. The
+report carries 36 pooled rows plus 108 per-family rows. For `oiadpq`: general
+n=1,331 agreement 0.447, banks n=0, insurance n=0 — the two proxy families no
+longer produce a comparable value at all. The pooled rate rose 0.422 → 0.447
+precisely because the 0.000-agreement bank rows are gone, which is the defect
+the per-family split exists to expose.
+
+*Metric.* `interest_pct_operating_income` (version 2): all **3,032** SimFin-era
+rows are now null with `era_not_supported`; the 24,948 legacy values remain. The
+3,032 exceeds the 1,491 rows that previously held a *value* because
+`era_not_supported` also overrides the prior reason on rows that were already
+null. It reconciles exactly: 1,491 values + 856 `mixed_era_window` + 656
+`missing_input` + 29 `negative_base` = 3,032.
+
+*Consequence worth noting.* `mixed_era_window` now occurs **0** times corpus-wide
+(previously 856). It only ever arose on this metric, and every mixed window ends
+in a SimFin quarter, which is now `era_not_supported` instead. The guard remains
+correct and is still covered by tests, but it is no longer exercised by any
+production row — so a future metric on a non-equivalent TTM field will be its
+first real user again.
+
+*Invariants (all of `metrics_quarterly`).* 0 `inf`/`NaN`; 0 value-XOR-reason
+violations; 0 quality flags on a null; 0 `era_not_supported` outside the
+restricted metric.
+
+*Legacy immutability — the hard gate.* PASSED, proven structurally rather than
+by comparison: **0** legacy as-of quarters have a four-quarter window spanning
+more than one era (all 1,065 mixed windows end in SimFin quarters), so the
+`oiadpq` equivalence flip cannot reach a legacy value; `apply_era_restriction`
+is a no-op for legacy rows because legacy is in `supported_eras`; and the
+banks/insurance null-out is confined to the SimFin builder. Empirically the row
+count is 24,948 before and after with none added or removed, and the KO 2019Q4
+golden is unchanged at 0.08974480599563608.
+
+*Method caveat (S4.7).* The plan's original gate compared against a CSV baseline.
+That instrument is **lossy** — DuckDB's CSV export truncates doubles (TYL 2015Q3
+exported as 0.0001060089400872 against the true 0.00010600894008728069), which
+manufactured 17,218 spurious "drifted" rows at ≤7.6e-13 relative, none above
+1e-12. The warehouse value matches exact arithmetic (0.012 / 113.19800000000001)
+and the CSV value does not. A SQL `SUM` recomputation was also rejected as an
+oracle because DuckDB's summation does not associate identically to Python's
+`sum()`. Do not use either method for a future byte-identity gate; the
+structural argument above is the sound one.
 
 Resolves one of the ten open Stage 1 CONTRADICTIONs recorded in
 `specs/2026-07-24_STAGE1_PLAUSIBILITY_AND_ERA_BATCH2_DESIGN.md` and in the
