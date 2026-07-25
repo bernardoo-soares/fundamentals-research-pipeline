@@ -335,7 +335,6 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
 
     out["saleq"] = _numeric_series(frame, "Revenue")
     out["niq"] = _numeric_series(frame, "Net Income")
-    out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
     # SimFin states tax as a negative expense; Compustat states it positive.
     out["txtq"] = _positive_expense(frame, "Income Tax (Expense) Benefit, Net")
     out["epspxq"] = _derive_eps(frame)
@@ -360,6 +359,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["cshoq"] = _numeric_series(frame, "Shares (Basic)")
 
     if family == "general":
+        out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
         out["xintq"] = _numeric_series(frame, "Interest Expense, Net")
         out["actq"] = _numeric_series(frame, "Total Current Assets")
         out["lctq"] = _numeric_series(frame, "Total Current Liabilities")
@@ -371,6 +371,10 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xrdq"] = _positive_expense(frame, "Research & Development")
         out["invtq"] = _numeric_series(frame, "Inventories")
     elif family == "banks":
+        # SimFin's bank operating income is Net Revenue after Provisions less
+        # Total Non-Interest Expense -- not Compustat's Operating Income After
+        # Depreciation. Measured FY2023 agreement 0.000 (median 89.9% off).
+        out["oiadpq"] = _empty_numeric_series(frame)
         out["xintq"] = _empty_numeric_series(frame)
         out["actq"] = _empty_numeric_series(frame)
         out["lctq"] = _empty_numeric_series(frame)
@@ -382,6 +386,9 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xrdq"] = _empty_numeric_series(frame)
         out["invtq"] = _empty_numeric_series(frame)
     elif family == "insurance":
+        # Derived after Total Claims & Losses; not comparable to Compustat
+        # oiadpq. Measured FY2023 agreement 0.098.
+        out["oiadpq"] = _empty_numeric_series(frame)
         out["xintq"] = _empty_numeric_series(frame)
         out["actq"] = _empty_numeric_series(frame)
         out["lctq"] = _empty_numeric_series(frame)
