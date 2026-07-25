@@ -29,7 +29,7 @@ Per-quarter-valued metrics from the platform catalog's **Earnings** and
 | `net_margin` | `niq_ttm / saleq_ttm` | `saleq_ttm == 0` → `zero_denominator` |
 | `roa` | `niq_ttm / atq_latest` | `atq ≤ 0` → `zero_denominator`/`negative_base` |
 | `roe` | `niq_ttm / ceqq_latest` | `ceqq < 0` → `negative_base`; `== 0` → `zero_denominator` |
-| `debt_to_equity_adj` | `ltq / (ceqq + tstkq)`; `tstkq` null → `ltq / ceqq` | denom `< 0` → `negative_base`, `== 0` → `zero_denominator`; tstkq null path flagged `tstk_unavailable` |
+| `debt_to_equity_adj` | `ltq / (ceqq + tstkq)`; `tstkq` null → `ltq / ceqq` | denom `< 0` → `negative_base`, `== 0` → `zero_denominator`; tstkq-null path keeps its **value** and sets `quality_flag = tstk_unavailable` (see §5.1) |
 | `current_ratio` | `actq_latest / lctq_latest` | `lctq ≤ 0` → `zero_denominator`/`negative_base` |
 | `st_lt_debt_ratio` | `dlcq_latest / dlttq_latest` | `dlttq` null/`≤ 0` → `missing_input`/`zero_denominator` |
 | `lt_debt_payback_years` | `dlttq_latest / niq_ttm` | `niq_ttm ≤ 0` → `negative_base`/`zero_denominator` |
@@ -125,7 +125,18 @@ register declaratively, build at the I/O edge.
   golden drift). No new reason codes are needed.
 - **`metrics_quarterly_schema.py` (NEW).**
   - `QuarterPoint` — frozen dataclass `(year, quarter, value, reason_code,
-    source_era)`; `__post_init__` calls `validate_value_xor_reason`.
+    quality_flag, source_era)`; `__post_init__` calls
+    `validate_value_xor_reason(value, reason_code)` and additionally requires
+    that `quality_flag` (if set) is in `QUALITY_FLAGS` **and** accompanies a
+    present `value` (a flag annotates a value; it never explains a null).
+  - `QUALITY_FLAGS = frozenset({ReasonCode.TSTK_UNAVAILABLE})` — advisory flags
+    that co-exist with a value. **`tstk_unavailable` is a quality flag, not a
+    reason code.** The platform spec (§6.3) lists it among reason codes, but the
+    project's mandatory invariant (S4.5: "value XOR reason_code on every row")
+    forbids a reason code from co-existing with a value. `tstk_unavailable`
+    annotates *how* a present value was computed (equity add-back omitted), so
+    it is modelled as a quality flag on a non-null value. The string constant is
+    reused from `ReasonCode.TSTK_UNAVAILABLE` (one literal, DRY).
   - `QuarterMetric` — frozen dataclass `(metric_id, version, formula,
     compute)`. No `requires_single_era` flag: era purity is enforced inside the
     TTM helper by field semantics, not declared per metric.
@@ -133,9 +144,11 @@ register declaratively, build at the I/O edge.
     `METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.0"`.
 
   Table `metrics_quarterly`: PK `(ticker, year, quarter, metric_id)`; columns
-  `value DOUBLE, reason_code VARCHAR, source_era VARCHAR, metric_version VARCHAR,
-  computed_at TIMESTAMP, pipeline_version VARCHAR`. `source_era` is the era of
-  the as-of quarter (always single-valued) — provenance for the UI caveat.
+  `value DOUBLE, reason_code VARCHAR, quality_flag VARCHAR, source_era VARCHAR,
+  metric_version VARCHAR, computed_at TIMESTAMP, pipeline_version VARCHAR`.
+  `source_era` is the era of the as-of quarter (always single-valued) —
+  provenance for the UI caveat. `quality_flag` is null except on the
+  `debt_to_equity_adj` tstk-fallback path.
 
 ### 5.2 Pure compute (`metrics/`)
 
