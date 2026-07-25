@@ -155,8 +155,41 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         ),
     ),
     _equivalent_usd("niq", "niq", "Net Income", "net income", _FLOW),
-    _equivalent_usd(
-        "oiadpq", "oiadpq", "Operating Income (Loss)", "operating income", _FLOW
+    FieldEraSemantics(
+        field="oiadpq",
+        legacy=_usd("oiadpq", "Operating Income (Loss)", _FLOW),
+        simfin=_usd("Operating Income (Loss)", "operating income", _FLOW),
+        eras_equivalent=False,
+        divergence_note=(
+            "The providers draw the operating/non-operating line per company. "
+            "Investigated 2026-07-25 on the FY2023 overlap, general family "
+            "(1,319 rows): oiadpq agrees 44.6% (median 1.58%). No remapping "
+            "of the 663 available Compustat columns clears it -- oiadpq+spiq "
+            "0.474, piq-nopiq+xintq 0.474, revtq-xoprq-dpq 0.453, oibdpq-dpq "
+            "0.448, oibdpq 0.003, saleq-cogsq-xsgaq 0.008. The ceiling is "
+            "0.474 against a 0.90 threshold, where the successful Stage 1 "
+            "remediations reached 0.958 (reunaq) and 0.940 (seqq+mibtq). "
+            "DECISIVE: 73.9% of rows agree under at least ONE candidate "
+            "definition while no single definition exceeds 0.474, so which "
+            "definition reconciles varies per company -- a judgement about "
+            "what sits above the operating line (restructuring, impairments, "
+            "gains on sale, litigation), not a formula that can be chosen "
+            "once. Three hypotheses rejected by measurement: special/abnormal "
+            "items (subtracting SimFin Abnormal Gains worsens it to 0.307), "
+            "shared cause with cogsq (Spearman 0.210), and fiscal-calendar "
+            "misalignment (the annual grain is worse at 0.374). The ratio is "
+            "symmetric about 1.000 (p25 1.000, p50 1.000, legacy higher on "
+            "50.5%) with dispersion p90/p10 = 1.21, so unlike cogsq there is "
+            "no systematic bias to correct and unlike ppentq (2.17) it is not "
+            "a gross definitional offset. Banks and insurance are a separate "
+            "defect, fixed at the builder: SimFin's family statements define "
+            "operating income differently (banks 0.000 agreement), so oiadpq "
+            "is null for them from 2026-07-25. NOT cross-era comparable: a "
+            "TTM sum crossing a ticker's era-switch year is nulled "
+            "mixed_era_window, and interest_pct_operating_income is "
+            "restricted to the legacy era (spec "
+            "2026-07-25_OIADPQ_ERA_REMEDIATION_DESIGN section 3.3)."
+        ),
     ),
     FieldEraSemantics(
         field="xintq",

@@ -149,3 +149,17 @@ def test_cogsq_divergence_warns_about_the_gross_margin_threshold():
     assert entry.eras_equivalent is False
     assert "single era" in entry.divergence_note
     assert "40%" in entry.divergence_note
+
+
+def test_oiadpq_is_declared_non_equivalent_with_evidence():
+    """oiadpq is a per-company classification boundary, not a remapping error.
+
+    Declaring it equivalent produced a CONTRADICTION at 42.2% measured
+    agreement. Recorded so a future reader does not retry the remapping.
+    """
+    declaration = semantics_for("oiadpq")
+    assert declaration.eras_equivalent is False
+    assert declaration.divergence_note, "non-equivalent requires a note"
+    assert "0.474" in declaration.divergence_note, (
+        "the note must record the candidate ceiling that rules out a remap"
+    )
