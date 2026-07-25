@@ -29,6 +29,9 @@ def test_reason_codes_closed_set() -> None:
         # window spans more than one provider era, so the inputs at the two
         # ends are not the same quantity (see field_era_semantics.py)
         "mixed_era_window",
+        # metric is not defined in this row's provider era, so it is not
+        # computed there at all (see metrics/quarterly.apply_era_restriction)
+        "era_not_supported",
     } == set(REASON_CODES)
 
 

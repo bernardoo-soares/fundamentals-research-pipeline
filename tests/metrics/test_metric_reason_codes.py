@@ -36,3 +36,8 @@ def test_trend_schema_reexports_reason_code() -> None:
 
     assert s.ReasonCode.MISSING_INPUT == ReasonCode.MISSING_INPUT
     assert s.REASON_CODES is REASON_CODES
+
+
+def test_era_not_supported_is_in_the_closed_set():
+    assert ReasonCode.ERA_NOT_SUPPORTED == "era_not_supported"
+    assert ReasonCode.ERA_NOT_SUPPORTED in REASON_CODES

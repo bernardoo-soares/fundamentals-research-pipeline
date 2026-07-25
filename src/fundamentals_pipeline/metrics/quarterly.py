@@ -266,6 +266,45 @@ def debt_to_equity_adj_metric() -> ComputeFn:
     return _compute
 
 
+def apply_era_restriction(
+    points: list[QuarterPoint],
+    supported_eras: frozenset[str] | None,
+) -> list[QuarterPoint]:
+    """Null every point whose source_era falls outside the declared set.
+
+    Returns points unchanged when `supported_eras` is None (the metric applies
+    everywhere). Otherwise a point outside the set becomes a reasoned null with
+    ERA_NOT_SUPPORTED, keeping its year/quarter/source_era so the row stays
+    addressable and its provenance auditable.
+
+    A point whose provenance is unknown (source_era None) is nulled too:
+    refusing rather than assuming membership, mirroring
+    windows.require_single_era. Assuming membership would be imputation (S4.2).
+
+    ERA_NOT_SUPPORTED overrides any pre-existing reason_code, because outside a
+    supported era the metric does not apply at all -- a stronger and more
+    deterministic statement than whichever input happened to be missing.
+    """
+    if supported_eras is None:
+        return points
+    restricted: list[QuarterPoint] = []
+    for point in points:
+        if point.source_era is not None and point.source_era in supported_eras:
+            restricted.append(point)
+            continue
+        restricted.append(
+            QuarterPoint(
+                point.year,
+                point.quarter,
+                None,
+                ReasonCode.ERA_NOT_SUPPORTED,
+                None,
+                point.source_era,
+            )
+        )
+    return restricted
+
+
 def presence_flag(field: str, *, threshold: float) -> ComputeFn:
     """1.0 if the latest value > threshold, else 0.0; null if the value absent."""
 

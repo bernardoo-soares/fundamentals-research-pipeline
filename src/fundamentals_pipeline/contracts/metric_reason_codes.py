@@ -19,6 +19,7 @@ class ReasonCode:
     INSUFFICIENT_HISTORY = "insufficient_history"
     TSTK_UNAVAILABLE = "tstk_unavailable"
     MIXED_ERA_WINDOW = "mixed_era_window"
+    ERA_NOT_SUPPORTED = "era_not_supported"
 
 
 REASON_CODES: frozenset[str] = frozenset(
@@ -31,6 +32,7 @@ REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.INSUFFICIENT_HISTORY,
         ReasonCode.TSTK_UNAVAILABLE,
         ReasonCode.MIXED_ERA_WINDOW,
+        ReasonCode.ERA_NOT_SUPPORTED,
     }
 )
 

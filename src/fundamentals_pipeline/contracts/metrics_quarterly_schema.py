@@ -45,14 +45,20 @@ class QuarterPoint:
 class QuarterMetric:
     """A declarative point-in-time/TTM metric: identity + a pure compute fn.
 
-    Era purity is enforced inside the TTM helper (metrics/quarterly.ttm_flow)
-    from field_era_semantics, so no per-metric era flag is needed here.
+    Era purity for TTM sums is enforced inside metrics/quarterly.ttm_flow from
+    field_era_semantics, so no per-metric flag is needed for that.
+
+    `supported_eras` is a different concern: it declares the eras in which the
+    metric is meaningful at all. None means every era. The builder applies it
+    uniformly via metrics.quarterly.apply_era_restriction, so the declaration
+    is the sole input to the single enforcement call and the two cannot drift.
     """
 
     metric_id: str
     version: str
     formula: str
     compute: Callable[[Any], list[QuarterPoint]]
+    supported_eras: frozenset[str] | None = None
 
 
 METRICS_QUARTERLY_COLUMNS: tuple[str, ...] = (

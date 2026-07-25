@@ -4,8 +4,11 @@ import math
 
 import pandas as pd
 
+from fundamentals_pipeline.contracts.era_resolution import SourceEra
 from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
+from fundamentals_pipeline.contracts.metrics_quarterly_schema import QuarterPoint
 from fundamentals_pipeline.metrics.quarterly import (
+    apply_era_restriction,
     debt_to_equity_adj_metric,
     presence_flag,
     stock_over_ttm,
@@ -13,6 +16,19 @@ from fundamentals_pipeline.metrics.quarterly import (
     ttm_over_stock,
     ttm_ratio,
 )
+
+LEGACY_ONLY = frozenset({SourceEra.LEGACY})
+
+
+def _era_point(era, value=1.5):
+    """Build a lone QuarterPoint for era-restriction tests.
+
+    Named distinctly from the pre-existing `_point(points, year, quarter)`
+    lookup helper below (17 call sites) to avoid shadowing it; the brief's
+    original snippet named this helper `_point` too, which would have
+    silently broken every existing test in this file.
+    """
+    return QuarterPoint(2023, 1, value, None, None, era)
 
 
 def _frame(rows: list[dict]) -> pd.DataFrame:
@@ -159,3 +175,50 @@ def test_no_nan_or_inf_reaches_a_value() -> None:
     for p in ttm_ratio("niq", "saleq")(_frame(rows)):
         if p.value is not None:
             assert math.isfinite(p.value)
+
+
+def test_apply_era_restriction_passes_through_when_unrestricted():
+    """supported_eras=None means the metric applies to every era."""
+    points = [_era_point(SourceEra.SIMFIN)]
+    assert apply_era_restriction(points, None) == points
+
+
+def test_apply_era_restriction_keeps_supported_eras():
+    point = _era_point(SourceEra.LEGACY)
+    (out,) = apply_era_restriction([point], LEGACY_ONLY)
+    assert out.value == 1.5
+    assert out.reason_code is None
+
+
+def test_apply_era_restriction_nulls_unsupported_eras():
+    (out,) = apply_era_restriction([_era_point(SourceEra.SIMFIN)], LEGACY_ONLY)
+    assert out.value is None
+    assert out.reason_code == ReasonCode.ERA_NOT_SUPPORTED
+    assert out.year == 2023 and out.quarter == 1
+    assert out.source_era == SourceEra.SIMFIN, "provenance is preserved"
+
+
+def test_apply_era_restriction_nulls_unknown_provenance():
+    """Refuse rather than assume membership, mirroring require_single_era."""
+    (out,) = apply_era_restriction([_era_point(None)], LEGACY_ONLY)
+    assert out.reason_code == ReasonCode.ERA_NOT_SUPPORTED
+
+
+def test_apply_era_restriction_clears_a_quality_flag():
+    """A flag may not survive on a nulled value (QuarterPoint invariant)."""
+    flagged = QuarterPoint(
+        2023, 1, 4.67, None, ReasonCode.TSTK_UNAVAILABLE, SourceEra.SIMFIN
+    )
+    (out,) = apply_era_restriction([flagged], LEGACY_ONLY)
+    assert out.value is None
+    assert out.quality_flag is None
+
+
+def test_apply_era_restriction_overrides_an_existing_reason():
+    """Outside a supported era the metric does not apply at all, so
+    era_not_supported wins over whatever else was missing. Deterministic."""
+    missing = QuarterPoint(
+        2023, 1, None, ReasonCode.MISSING_INPUT, None, SourceEra.SIMFIN
+    )
+    (out,) = apply_era_restriction([missing], LEGACY_ONLY)
+    assert out.reason_code == ReasonCode.ERA_NOT_SUPPORTED
