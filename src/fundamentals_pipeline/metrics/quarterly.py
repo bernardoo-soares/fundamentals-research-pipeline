@@ -73,7 +73,10 @@ def ttm_flow(frame: pd.DataFrame, field: str) -> dict[int, TtmResult]:
     A window is present only when all four preceding-and-current quarter indices
     exist with non-null values (a calendar gap leaves an index absent). Marks
     the result mixed when the field is not cross-era equivalent and the window
-    spans more than one era.
+    is not provably a single era -- either it spans more than one era or any
+    quarter's provenance is unknown. Unknown provenance is treated as impure
+    rather than trusted, mirroring windows.require_single_era (refuse rather
+    than assume purity); imputing purity is exactly the failure S4.2 forbids.
     """
     equivalent = semantics_for(field).eras_equivalent
     values = pd.to_numeric(frame[field], errors="coerce")
@@ -88,8 +91,8 @@ def ttm_flow(frame: pd.DataFrame, field: str) -> dict[int, TtmResult]:
         if any(value is None or pd.isna(value) for value in window_values):
             continue
         eras = {_era_of(era_by_index.get(index)) for index in window}
-        eras.discard(None)
-        mixed = (not equivalent) and len(eras) > 1
+        impure = None in eras or len(eras) > 1
+        mixed = (not equivalent) and impure
         out[int(as_of)] = TtmResult(float(sum(window_values)), mixed)
     return out
 

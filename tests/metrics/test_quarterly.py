@@ -77,6 +77,19 @@ def test_non_equivalent_ttm_across_eras_is_mixed_era_window() -> None:
     assert _point(points, 2023, 1).reason_code == ReasonCode.MIXED_ERA_WINDOW
 
 
+def test_non_equivalent_ttm_with_unknown_provenance_is_mixed_era_window() -> None:
+    # A null source_era in the window must be refused, not assumed pure
+    # (mirrors windows.require_single_era). xintq is non-equivalent.
+    rows = [
+        _q(2023, 1, "simfin", xintq=1.0, oiadpq=10.0),
+        _q(2023, 2, "simfin", xintq=1.0, oiadpq=10.0),
+        _q(2023, 3, None, xintq=1.0, oiadpq=10.0),
+        _q(2023, 4, "simfin", xintq=1.0, oiadpq=10.0),
+    ]
+    points = ttm_ratio("xintq", "oiadpq")(_frame(rows))
+    assert _point(points, 2023, 4).reason_code == ReasonCode.MIXED_ERA_WINDOW
+
+
 def test_equivalent_ttm_across_eras_is_allowed() -> None:
     # niq is eras_equivalent=True; the same boundary window computes a value.
     rows = [
