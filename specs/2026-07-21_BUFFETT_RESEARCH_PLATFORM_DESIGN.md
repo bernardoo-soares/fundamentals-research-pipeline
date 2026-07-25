@@ -352,6 +352,27 @@ not_applicable_sector | insufficient_history | tstk_unavailable`.
    `|atq − (ltq + ceqq)| / atq ≤ 5%` else row flagged in data-health report;
    unit-magnitude checks (e.g. AAPL revenue in expected millions range).
 
+### 6.5 Implementation status
+
+- **`metrics_trend`** (windowed): implemented (Stage 2 slice 1, PR #5).
+- **`metrics_quarterly`** (point-in-time / TTM): implemented 2026-07-25
+  (`specs/2026-07-25_METRICS_QUARTERLY_TTM_ENGINE_DESIGN.md`). Nine metrics:
+  `net_margin`, `roa`, `roe`, `debt_to_equity_adj`, `current_ratio`,
+  `st_lt_debt_ratio`, `lt_debt_payback_years`, `interest_pct_operating_income`,
+  `treasury_stock_present`. Two contract clarifications vs the catalog above:
+  1. `tstk_unavailable` is modelled as a **quality flag** on a present value,
+     not a reason code, so the S4.5 value-XOR-reason invariant holds on every
+     row (§6.3 lists it among reason codes; it annotates *how* a value was
+     computed, not a null).
+  2. Cross-era purity at the quarterly grain is enforced **per field, not per
+     metric**: point-in-time stock metrics are single-quarter hence single-era;
+     only a TTM sum on a non-equivalent field (`xintq`) that crosses a ticker's
+     era-switch year is nulled `mixed_era_window`. Measured finding: SimFin
+     populates `xintq` sparsely, so `interest_pct_operating_income` is
+     `missing_input` for most SimFin-era quarters (no imputation).
+- **`gross_margin`** and annual-grain variants: deferred (cogsq era issue +
+  annual-grain design). **Scoring, valuation, UI**: not yet built.
+
 ---
 
 ## 7. Scoring Framework (sub-project 4)

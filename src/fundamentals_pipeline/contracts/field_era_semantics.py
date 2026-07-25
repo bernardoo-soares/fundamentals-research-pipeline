@@ -326,8 +326,11 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
             "(median 0.183), dd1q 3.9%, dlcq-dd1q 6.6%. Coverage also diverges "
             "sharply -- SimFin leaves this null for 28.2% of companies against "
             "0.9% for Compustat -- so the providers disagree on both the value "
-            "and on whether the concept applies. NOT cross-era comparable: "
-            "st_lt_debt_ratio must stay inside a single era."
+            "and on whether the concept applies. NOT cross-era comparable: a "
+            "windowed (trend-grain) metric using it must stay inside a single "
+            "era. The point-in-time metrics_quarterly grain is unaffected: each "
+            "quarterly st_lt_debt_ratio value uses one quarter, hence one era "
+            "(spec 2026-07-25_METRICS_QUARTERLY_TTM_ENGINE_DESIGN section 4)."
         ),
     ),
     FieldEraSemantics(
@@ -342,8 +345,13 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
             "(median 0.064), dlttq+dd1q 1.7%, lltq 0.0%. No Compustat column "
             "matches, so this is a classification boundary rather than a "
             "remapping error -- the same shape as ppentq. NOT cross-era "
-            "comparable: lt_debt_payback_years and st_lt_debt_ratio must stay "
-            "inside a single era."
+            "comparable: a windowed (trend-grain) metric using it must stay "
+            "inside a single era, and a TTM sum crossing a ticker's era-switch "
+            "year is nulled mixed_era_window. The point-in-time "
+            "metrics_quarterly values of lt_debt_payback_years and "
+            "st_lt_debt_ratio are unaffected: each uses one quarter's balance "
+            "sheet, hence one era (spec "
+            "2026-07-25_METRICS_QUARTERLY_TTM_ENGINE_DESIGN section 4)."
         ),
     ),
     FieldEraSemantics(

@@ -11,34 +11,23 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-METRICS_PIPELINE_VERSION = "metrics-1.0"
-
-
-class ReasonCode:
-    """Closed set of reason codes (Buffett spec section 6.3)."""
-
-    MISSING_INPUT = "missing_input"
-    INCOMPLETE_YEAR = "incomplete_year"
-    NEGATIVE_BASE = "negative_base"
-    ZERO_DENOMINATOR = "zero_denominator"
-    NOT_APPLICABLE_SECTOR = "not_applicable_sector"
-    INSUFFICIENT_HISTORY = "insufficient_history"
-    TSTK_UNAVAILABLE = "tstk_unavailable"
-    MIXED_ERA_WINDOW = "mixed_era_window"
-
-
-REASON_CODES: frozenset[str] = frozenset(
-    {
-        ReasonCode.MISSING_INPUT,
-        ReasonCode.INCOMPLETE_YEAR,
-        ReasonCode.NEGATIVE_BASE,
-        ReasonCode.ZERO_DENOMINATOR,
-        ReasonCode.NOT_APPLICABLE_SECTOR,
-        ReasonCode.INSUFFICIENT_HISTORY,
-        ReasonCode.TSTK_UNAVAILABLE,
-        ReasonCode.MIXED_ERA_WINDOW,
-    }
+from .metric_reason_codes import (  # re-exported for existing importers
+    REASON_CODES,
+    ReasonCode,
+    validate_value_xor_reason,
 )
+
+__all__ = [
+    "METRICS_PIPELINE_VERSION",
+    "METRICS_TREND_COLUMNS",
+    "MetricPoint",
+    "REASON_CODES",
+    "ReasonCode",
+    "TrendMetric",
+    "create_metrics_trend_ddl",
+]
+
+METRICS_PIPELINE_VERSION = "metrics-1.0"
 
 
 @dataclass(frozen=True)
@@ -51,12 +40,7 @@ class MetricPoint:
     window_years_present: int
 
     def __post_init__(self) -> None:
-        if (self.value is None) == (self.reason_code is None):
-            raise ValueError(
-                "MetricPoint requires exactly one of value / reason_code."
-            )
-        if self.reason_code is not None and self.reason_code not in REASON_CODES:
-            raise ValueError(f"Unknown reason_code: {self.reason_code!r}")
+        validate_value_xor_reason(self.value, self.reason_code)
 
 
 @dataclass(frozen=True)
