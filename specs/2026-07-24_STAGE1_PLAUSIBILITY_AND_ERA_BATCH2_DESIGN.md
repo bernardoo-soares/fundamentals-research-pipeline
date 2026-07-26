@@ -162,3 +162,11 @@ have wrongly implied the two providers mean different things by revenue.
 4. Ten fields remain in CONTRADICTION: `capxy`, `cheq`, `cshfdq`, `cshoq`,
    `dpq`, `oancfy`, `oiadpq`, `rectq`, `xrdq`, `xsgaq`. None blocks the next
    slice.
+   **Superseded 2026-07-25:** `oiadpq` was root-caused and resolved — it is now
+   declared `eras_equivalent=False` (`divergent_declared`), leaving **nine**:
+   `capxy`, `cheq`, `cshfdq`, `cshoq`, `dpq`, `oancfy`, `rectq`, `xrdq`,
+   `xsgaq`. See `2026-07-25_OIADPQ_ERA_REMEDIATION_DESIGN.md`. That
+   investigation also refuted the assumption that these are one cluster:
+   `xsgaq` (0.288) is a separate cause-class from `cogsq` (Spearman 0.210),
+   and the per-family audit it added found `saleq` banks at 0.000 agreement
+   while its pooled 0.869 still reads `agree` — see that spec's §7.

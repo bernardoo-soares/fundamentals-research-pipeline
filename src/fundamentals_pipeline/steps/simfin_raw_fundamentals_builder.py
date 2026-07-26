@@ -73,6 +73,11 @@ SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
 }
 SIMFIN_CASHFLOW_DA_COLUMN = "Depreciation & Amortization__cashflow"
 
+# Staging-side provenance: which SimFin family statement served the row. Kept
+# in the staged CSV so the cross-era audit can report agreement per family;
+# NOT part of STAGE1_OUTPUT_COLUMNS, so the published schema is unchanged.
+SOURCE_FAMILY_COLUMN = "source_family"
+
 
 def _normalize_ticker(value: object) -> str | None:
     """Normalize ticker strings to uppercase or return `None` when empty."""
@@ -335,7 +340,6 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
 
     out["saleq"] = _numeric_series(frame, "Revenue")
     out["niq"] = _numeric_series(frame, "Net Income")
-    out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
     # SimFin states tax as a negative expense; Compustat states it positive.
     out["txtq"] = _positive_expense(frame, "Income Tax (Expense) Benefit, Net")
     out["epspxq"] = _derive_eps(frame)
@@ -360,6 +364,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["cshoq"] = _numeric_series(frame, "Shares (Basic)")
 
     if family == "general":
+        out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
         out["xintq"] = _numeric_series(frame, "Interest Expense, Net")
         out["actq"] = _numeric_series(frame, "Total Current Assets")
         out["lctq"] = _numeric_series(frame, "Total Current Liabilities")
@@ -371,6 +376,10 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xrdq"] = _positive_expense(frame, "Research & Development")
         out["invtq"] = _numeric_series(frame, "Inventories")
     elif family == "banks":
+        # SimFin's bank operating income is Net Revenue after Provisions less
+        # Total Non-Interest Expense -- not Compustat's Operating Income After
+        # Depreciation. Measured FY2023 agreement 0.000 (median 89.9% off).
+        out["oiadpq"] = _empty_numeric_series(frame)
         out["xintq"] = _empty_numeric_series(frame)
         out["actq"] = _empty_numeric_series(frame)
         out["lctq"] = _empty_numeric_series(frame)
@@ -382,6 +391,9 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xrdq"] = _empty_numeric_series(frame)
         out["invtq"] = _empty_numeric_series(frame)
     elif family == "insurance":
+        # Derived after Total Claims & Losses; not comparable to Compustat
+        # oiadpq. Measured FY2023 agreement 0.098.
+        out["oiadpq"] = _empty_numeric_series(frame)
         out["xintq"] = _empty_numeric_series(frame)
         out["actq"] = _empty_numeric_series(frame)
         out["lctq"] = _empty_numeric_series(frame)
@@ -449,10 +461,10 @@ def _write_year_partitions(
     for year in range(start_year, end_year + 1):
         year_path = output_dir / f"raw_fundamentals_{year}.csv"
         year_df = frame[frame["year"] == year].copy() if not frame.empty else pd.DataFrame(
-            columns=STAGE1_RAW_COLUMNS
+            columns=list(frame.columns)
         )
         if year_df.empty:
-            year_df = pd.DataFrame(columns=STAGE1_RAW_COLUMNS)
+            year_df = pd.DataFrame(columns=list(frame.columns))
         year_df.to_csv(year_path, index=False)
         artifacts[f"processed_{year}"] = str(year_path)
     return artifacts
@@ -687,8 +699,9 @@ def build_simfin_raw_fundamentals(
         normalized_selected.columns[: len(STAGE1_RAW_COLUMNS)].tolist()
     )
 
+    staged_columns = [*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN]
     year_outputs = _write_year_partitions(
-        normalized_selected[list(STAGE1_RAW_COLUMNS)],
+        normalized_selected[staged_columns],
         output_dir=resolved_output_dir,
         start_year=start_year,
         end_year=end_year,

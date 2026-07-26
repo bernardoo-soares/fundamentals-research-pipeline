@@ -5,6 +5,7 @@ import pandas as pd
 from fundamentals_pipeline import __main__ as cli
 from fundamentals_pipeline.connectors.simfin_dataset_loader import SimfinConnector
 from fundamentals_pipeline.steps.simfin_raw_fundamentals_builder import (
+    _build_family_canonical,
     build_simfin_raw_fundamentals,
 )
 
@@ -760,3 +761,42 @@ def test_simfin_expense_and_contra_equity_signs_match_legacy_convention(tmp_path
     # the transform is applied at all, consistently with xsgaq/xrdq.
     assert aapl["txtq"] == -0.000004
     assert aapl["tstkq"] == -0.000008
+
+
+def test_oiadpq_is_null_for_banks_and_insurance_families():
+    """SimFin's bank/insurance 'Operating Income' is a different aggregate.
+
+    Banks state it as Net Revenue after Provisions - Total Non-Interest
+    Expense; Compustat oiadpq is Operating Income After Depreciation.
+    Publishing one as the other is proxy substitution (AGENTS.md S4.2), so
+    the correct output is null.
+    """
+    frame = pd.DataFrame(
+        {
+            "ticker": ["BAC"],
+            "year": [2023],
+            "quarter": [1],
+            "Operating Income (Loss)": [9089.0],
+            "Revenue": [25000.0],
+            "Net Income": [8200.0],
+        }
+    )
+    for family in ("banks", "insurance"):
+        out = _build_family_canonical(frame, family=family)
+        assert out["oiadpq"].isna().all(), f"{family} must not publish oiadpq"
+
+
+def test_oiadpq_is_mapped_for_the_general_family():
+    """The general family keeps its mapping; only banks/insurance change."""
+    frame = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "year": [2023],
+            "quarter": [4],
+            "Operating Income (Loss)": [40373.0],
+            "Revenue": [89498.0],
+            "Net Income": [22956.0],
+        }
+    )
+    out = _build_family_canonical(frame, family="general")
+    assert out["oiadpq"].iloc[0] == 40373.0

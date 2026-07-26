@@ -7,6 +7,7 @@ dispatcher to edit (AGENTS.md S2.2).
 
 from __future__ import annotations
 
+from ..contracts.era_resolution import SourceEra
 from ..contracts.metrics_quarterly_schema import QuarterMetric
 from .quarterly import (
     debt_to_equity_adj_metric,
@@ -18,6 +19,7 @@ from .quarterly import (
 )
 
 TREASURY_PRESENCE_THRESHOLD = 0.0
+_VALID_ERAS = frozenset(SourceEra)
 
 QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     QuarterMetric(
@@ -48,9 +50,16 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     ),
     QuarterMetric(
         "interest_pct_operating_income",
-        "1",
-        "xintq_ttm / oiadpq_ttm",
+        "2",
+        "xintq_ttm / oiadpq_ttm (LEGACY ERA ONLY: both legs diverge across "
+        "the provider boundary. SimFin reports xintq net of interest income "
+        "and sign-inverted (89.8% sign-flip), and oiadpq is a per-company "
+        "classification boundary (44.6% agreement, no remapping above 0.474). "
+        "Measured on 286 dual-era tickers: median step 1.906 across the "
+        "switch year, 29.0% flip the <15% verdict. SimFin-era rows are null "
+        "with era_not_supported rather than false.)",
         ttm_ratio("xintq", "oiadpq"),
+        supported_eras=frozenset({SourceEra.LEGACY}),
     ),
     QuarterMetric(
         "treasury_stock_present",
@@ -64,12 +73,32 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
 def validate_quarterly_registry(
     registry: tuple[QuarterMetric, ...] = QUARTERLY_REGISTRY,
 ) -> None:
-    """Reject a registry with duplicate metric ids."""
+    """Reject a registry with duplicate metric ids or an inert era restriction.
+
+    `supported_eras=None` means every era and always passes. A non-None value
+    must be a non-empty set of valid `SourceEra` members: a typo'd era value
+    would never match any row's `source_era`, so `apply_era_restriction`
+    would silently null every row of that metric with `era_not_supported`
+    (a total coverage wipe) instead of raising. An empty frozenset is
+    rejected for the same reason -- it nulls every row by construction.
+    """
     seen: set[str] = set()
     for metric in registry:
         if metric.metric_id in seen:
             raise ValueError(f"Duplicate metric_id in registry: {metric.metric_id}")
         seen.add(metric.metric_id)
+        if metric.supported_eras is not None:
+            if not metric.supported_eras:
+                raise ValueError(
+                    f"{metric.metric_id}: supported_eras is an empty set, which "
+                    "would null every row of this metric with era_not_supported."
+                )
+            unknown = metric.supported_eras - _VALID_ERAS
+            if unknown:
+                raise ValueError(
+                    f"{metric.metric_id}: supported_eras contains values that "
+                    f"are not valid SourceEra members: {sorted(unknown)}."
+                )
 
 
 validate_quarterly_registry()

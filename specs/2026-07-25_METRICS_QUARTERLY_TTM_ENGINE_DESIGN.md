@@ -48,7 +48,7 @@ Per-quarter-valued metrics from the platform catalog's **Earnings** and
 | `current_ratio` | `actq_latest / lctq_latest` | `lctq ≤ 0` → `zero_denominator`/`negative_base` |
 | `st_lt_debt_ratio` | `dlcq_latest / dlttq_latest` | `dlttq` null/`≤ 0` → `missing_input`/`zero_denominator` |
 | `lt_debt_payback_years` | `dlttq_latest / niq_ttm` | `niq_ttm ≤ 0` → `negative_base`/`zero_denominator` |
-| `interest_pct_operating_income` | `xintq_ttm / oiadpq_ttm` | `oiadpq_ttm < 0` → `negative_base`, `== 0` → `zero_denominator`; **`xintq_ttm` mixed-era → `mixed_era_window`** |
+| `interest_pct_operating_income` | `xintq_ttm / oiadpq_ttm` | `oiadpq_ttm < 0` → `negative_base`, `== 0` → `zero_denominator`; **`xintq_ttm` mixed-era → `mixed_era_window`**. **Superseded 2026-07-25:** restricted to the legacy era, so a non-legacy row still carrying a value is nulled `era_not_supported` (an already-reasoned null keeps its more specific reason). See `2026-07-25_OIADPQ_ERA_REMEDIATION_DESIGN.md` §3.3. |
 | `treasury_stock_present` | `1.0` if `tstkq_latest > 0` else `0.0` | `tstkq` null → `missing_input` |
 
 All missing/absent inputs → `missing_input`. Value XOR reason_code on every row.
@@ -155,8 +155,14 @@ register declaratively, build at the I/O edge.
   - `QuarterMetric` — frozen dataclass `(metric_id, version, formula,
     compute)`. No `requires_single_era` flag: era purity is enforced inside the
     TTM helper by field semantics, not declared per metric.
+    **Superseded 2026-07-25** by `2026-07-25_OIADPQ_ERA_REMEDIATION_DESIGN.md`
+    §3.3, which adds a fifth field `supported_eras: frozenset[str] | None`
+    (`None` = every era). That is a different concern from TTM era purity: it
+    declares the eras in which a metric is meaningful at all, enforced by
+    `metrics/quarterly.apply_era_restriction`.
   - `METRICS_QUARTERLY_COLUMNS`, `create_metrics_quarterly_ddl()`,
-    `METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.0"`.
+    `METRICS_QUARTERLY_PIPELINE_VERSION` — `"metrics-quarterly-1.0"` at this
+    slice, bumped to `"metrics-quarterly-1.1"` by the oiadpq remediation slice.
 
   Table `metrics_quarterly`: PK `(ticker, year, quarter, metric_id)`; columns
   `value DOUBLE, reason_code VARCHAR, quality_flag VARCHAR, source_era VARCHAR,
@@ -234,8 +240,11 @@ register declaratively, build at the I/O edge.
    `debt_to_equity_adj`), and spot-checked named tickers (AAPL, KO, plus a
    negative-equity name). Report measured numbers, caveat the `xintq`/`dlttq`/
    `dlcq` cross-era comparability explicitly.
-5. **Versioning:** each metric `version="1"`; any later change to a computation
-   bumps that metric's version and must break its golden test.
+5. **Versioning:** each metric `version="1"` at this slice; any later change to
+   a computation bumps that metric's version and must break its golden test.
+   **Superseded 2026-07-25:** `interest_pct_operating_income` is now
+   `version="2"` (restricted to the legacy era — see
+   `2026-07-25_OIADPQ_ERA_REMEDIATION_DESIGN.md` §3.3).
 
 ## 7. Out of scope / open items
 
