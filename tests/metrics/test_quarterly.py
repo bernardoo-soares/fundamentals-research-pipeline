@@ -214,11 +214,12 @@ def test_apply_era_restriction_clears_a_quality_flag():
     assert out.quality_flag is None
 
 
-def test_apply_era_restriction_overrides_an_existing_reason():
-    """Outside a supported era the metric does not apply at all, so
-    era_not_supported wins over whatever else was missing. Deterministic."""
+def test_apply_era_restriction_preserves_a_more_specific_reason():
+    """A point already nulled with a specific reason keeps that reason: the
+    more specific diagnosis is the useful one, mirroring
+    windows.require_single_era's `_blocked` helper."""
     missing = QuarterPoint(
         2023, 1, None, ReasonCode.MISSING_INPUT, None, SourceEra.SIMFIN
     )
     (out,) = apply_era_restriction([missing], LEGACY_ONLY)
-    assert out.reason_code == ReasonCode.ERA_NOT_SUPPORTED
+    assert out.reason_code == ReasonCode.MISSING_INPUT

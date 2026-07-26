@@ -17,19 +17,31 @@ longer produce a comparable value at all. The pooled rate rose 0.422 → 0.447
 precisely because the 0.000-agreement bank rows are gone, which is the defect
 the per-family split exists to expose.
 
-*Metric.* `interest_pct_operating_income` (version 2): all **3,032** SimFin-era
-rows are now null with `era_not_supported`; the 24,948 legacy values remain. The
-3,032 exceeds the 1,491 rows that previously held a *value* because
-`era_not_supported` also overrides the prior reason on rows that were already
-null. It reconciles exactly: 1,491 values + 856 `mixed_era_window` + 656
-`missing_input` + 29 `negative_base` = 3,032.
+*Metric.* `interest_pct_operating_income` (version 2): no SimFin-era row retains
+a value, and the 24,948 legacy values remain. Exactly **1,491** rows — the ones
+that previously held a value — are relabelled `era_not_supported`. The other
+1,541 SimFin rows were already reasoned nulls and **keep their more specific
+diagnosis**: 856 `mixed_era_window`, 656 `missing_input`, 29 `negative_base`.
+Full breakdown of the metric's 33,692 rows:
 
-*Consequence worth noting.* `mixed_era_window` now occurs **0** times corpus-wide
-(previously 856). It only ever arose on this metric, and every mixed window ends
-in a SimFin quarter, which is now `era_not_supported` instead. The guard remains
-correct and is still covered by tests, but it is no longer exercised by any
-production row — so a future metric on a non-equivalent TTM field will be its
-first real user again.
+| era | outcome | rows |
+|---|---|---|
+| legacy | value present | 24,948 |
+| legacy | `missing_input` | 4,636 |
+| legacy | `negative_base` | 1,076 |
+| simfin | `era_not_supported` | 1,491 |
+| simfin | `mixed_era_window` | 856 |
+| simfin | `missing_input` | 656 |
+| simfin | `negative_base` | 29 |
+
+`apply_era_restriction` relabels only points that still carry a value, matching
+`windows.require_single_era`'s `_blocked` helper. An earlier draft of this slice
+overrode every prior reason, which flattened those 1,541 rows to
+`era_not_supported` and erased two real signals from the reason-code tallies:
+that SimFin populates `xintq` sparsely, and that 856 windows are era-contaminated.
+Corpus-wide reason counts are therefore unchanged by this slice apart from the
+1,491 relabelled rows — `missing_input` 25,702, `negative_base` 5,837,
+`zero_denominator` 1,797 and `mixed_era_window` 856 all stand exactly as before.
 
 *Invariants (all of `metrics_quarterly`).* 0 `inf`/`NaN`; 0 value-XOR-reason
 violations; 0 quality flags on a null; 0 `era_not_supported` outside the

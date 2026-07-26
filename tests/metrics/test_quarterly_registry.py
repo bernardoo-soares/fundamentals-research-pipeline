@@ -181,12 +181,13 @@ def test_compute_layer_interest_pct_mixed_era_abbv() -> None:
     `metric.compute` is called directly, which is what this assertion proves:
     the TTM era guard fires on a non-equivalent field spanning two eras.
 
-    But `interest_pct_operating_income` is restricted to the legacy era
+    `interest_pct_operating_income` is also restricted to the legacy era
     (see test_interest_pct_is_restricted_to_the_legacy_era), and this row's
     source_era is "simfin". The builder calls `apply_era_restriction` after
-    `metric.compute`, and ERA_NOT_SUPPORTED overrides any pre-existing reason
-    code. So the value production actually publishes for this row is null
-    with ERA_NOT_SUPPORTED, not MIXED_ERA_WINDOW -- asserted below.
+    `metric.compute`, but that helper relabels only points that still carry a
+    value -- an already-reasoned null keeps its more specific diagnosis. So
+    production publishes MIXED_ERA_WINDOW here, not ERA_NOT_SUPPORTED: the
+    era-contamination signal survives the restriction. Asserted below.
     """
     frame = pd.DataFrame(
         [
@@ -204,9 +205,10 @@ def test_compute_layer_interest_pct_mixed_era_abbv() -> None:
     assert p.value is None
     assert p.reason_code == ReasonCode.MIXED_ERA_WINDOW
 
-    # What the builder actually publishes for this row: the metric is
-    # restricted to the legacy era, and era_not_supported overrides the
-    # compute-layer reason.
+    # What the builder actually publishes for this row. The metric is
+    # restricted to the legacy era, but the row is already a reasoned null, so
+    # the specific mixed_era_window diagnosis is preserved rather than being
+    # flattened to era_not_supported.
     metric = next(
         m for m in QUARTERLY_REGISTRY
         if m.metric_id == "interest_pct_operating_income"
@@ -214,4 +216,4 @@ def test_compute_layer_interest_pct_mixed_era_abbv() -> None:
     published = apply_era_restriction(metric.compute(frame), metric.supported_eras)
     row = next(pt for pt in published if pt.year == 2023 and pt.quarter == 1)
     assert row.value is None
-    assert row.reason_code == ReasonCode.ERA_NOT_SUPPORTED
+    assert row.reason_code == ReasonCode.MIXED_ERA_WINDOW
