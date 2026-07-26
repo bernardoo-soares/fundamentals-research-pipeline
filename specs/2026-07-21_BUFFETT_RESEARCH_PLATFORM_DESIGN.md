@@ -391,8 +391,25 @@ not_applicable_sector | insufficient_history | tstk_unavailable`.
 - **Annual-grain point variants**: not built and not planned as a separate grain
   — TTM is the more current form of the same quantity and a third grain would
   restate it (S2.6). Recorded in the SP3 completion spec §5.1.
+- **Remaining trend metrics**: implemented 2026-07-26 — `negative_equity_strong_earnings`,
+  `capex_pct_net_income_avg10y`, `receivables_pct_sales_trend_10y`,
+  `inventory_earnings_correspondence_10y`, `goodwill_trend`. Three are
+  era-guarded (`capxy` CONTRADICTED at 0.551, `rectq` at 0.566, `gdwlq` 0/758 in
+  the SimFin era); the other two rest on `agree` fields at median 0.0000.
+  Three definitions the catalog left loose are pinned in the SP3 completion spec
+  §4: `receivables_pct_sales_trend_10y` is an **OLS slope per year** (not
+  last-minus-first, which two points decide);
+  `inventory_earnings_correspondence_10y` counts consecutive present year-pairs
+  with a **zero change on either side counting as NOT corresponding**; and
+  `goodwill_trend` is the **fraction of pairs in which goodwill rose**, since
+  "YoY changes" names a series rather than a value.
+- **`eps_annual`**: satisfied by the published `epspxq_annual` column on
+  `fundamentals_annual`; not rebuilt as a metric (S2.6).
+- **SP3 status**: **complete at 28 metrics** (15 trend, 13 quarterly) apart from
+  the three price-dependent ones below.
 - **Scoring, valuation, UI**: not yet built. `market_cap`, `pe_ttm` and
-  `earnings_yield` are blocked on SP5 `prices_daily` by dependency.
+  `earnings_yield` are blocked on SP5 `prices_daily` by dependency, not deferred
+  by choice.
 
 ---
 
@@ -668,7 +685,7 @@ stored, versioned, auditable metric or score*.
 |---|---|---|
 | SP1 | Stage 1 extension (7 raw fields) | DONE (PR #3) |
 | SP2 | Warehouse foundation (native DuckDB store) | DONE (PR #4) |
-| SP3 | Stage 2 metrics engine | IN PROGRESS — slice 1 = family-agnostic trend metrics |
+| SP3 | Stage 2 metrics engine | **DONE 2026-07-26** (PRs #5, #8, #12, #13) — 28 metrics; `market_cap`/`pe_ttm`/`earnings_yield` moved to SP5 by price dependency |
 | SP4 | Stage 3 scoring (BuffettHeuristicScorer; component + composite scores) | deferred |
 | SP5 | Prices (Stooq EOD) + valuation & volatility | deferred |
 | SP6 | Streamlit UI (dashboard, rankings, smart search, score drilldown) | deferred |

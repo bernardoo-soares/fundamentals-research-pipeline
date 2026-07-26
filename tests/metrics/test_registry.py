@@ -21,6 +21,11 @@ def test_registry_ids_and_shape() -> None:
         "buyback_years_10y",
         "dividend_payer_years_10y",
         "gross_margin_ge40_years_10y",
+        "negative_equity_strong_earnings",
+        "capex_pct_net_income_avg10y",
+        "receivables_pct_sales_trend_10y",
+        "inventory_earnings_correspondence_10y",
+        "goodwill_trend",
     ]
     assert len(ids) == len(set(ids))  # unique
     for m in REGISTRY:
@@ -83,16 +88,20 @@ def test_era_guarded_metrics_are_declared_and_enforced():
     """A metric declaring `requires_single_era` must actually be wrapped.
 
     Supersedes an earlier assertion that NO metric set the flag, which was true
-    only while the mechanism was unused. `gross_margin_ge40_years_10y` is the
-    first user: its gross-profit arithmetic is legacy-specific, so a window
-    spanning the provider boundary must null rather than compute.
+    only while the mechanism was unused. Four metrics now opt in, each because
+    its inputs are not comparable across the provider boundary.
 
     `validate_registry` enforces the declaration/wrapper match at import time;
     this pins which metrics opt in, so adding one is a deliberate act with a
     measurable coverage cost rather than an accident.
     """
     guarded = {m.metric_id for m in REGISTRY if m.requires_single_era}
-    assert guarded == {"gross_margin_ge40_years_10y"}
+    assert guarded == {
+        "gross_margin_ge40_years_10y",  # gross-profit arithmetic is era-specific
+        "capex_pct_net_income_avg10y",  # capxy CONTRADICTED at 0.551
+        "receivables_pct_sales_trend_10y",  # rectq CONTRADICTED at 0.566
+        "goodwill_trend",  # gdwlq is 0/758 populated in the SimFin era
+    }
     for metric in REGISTRY:
         assert is_era_guarded(metric.compute) == metric.requires_single_era, (
             metric.metric_id
@@ -148,3 +157,88 @@ def test_gross_margin_series_subtracts_depreciation():
     series = gross_margin_series()(frame)
     assert series.loc[2020] == pytest.approx(0.55)
     assert series.loc[2020] != pytest.approx(0.60)
+
+
+# --- Golden tests: real warehouse corpus, hand-verified (S4.4) ---
+
+# AutoZone 2013-2022: negative book equity in every year, from sustained
+# buybacks, alongside a profit in every year. The book's durable-advantage
+# special case in its textbook form.
+_AZO = [
+    (2013, -1687.319, 1016.480), (2014, -1621.857, 1069.744),
+    (2015, -1701.390, 1160.241), (2016, -1787.538, 1241.007),
+    (2017, -1428.377, 1280.869), (2018, -1520.355, 1337.536),
+    (2019, -1713.851, 1617.221), (2020, -877.977, 1732.972),
+    (2021, -1797.536, 2170.314), (2022, -3538.913, 2429.604),
+]
+
+# Coca-Cola 2013-2022 capital intensity. 2017's low net income is the
+# Tax-Cuts-and-Jobs-Act charge year, and is real.
+_KO_CAPEX = [
+    (2013, 2550.0, 8584.0), (2014, 2406.0, 7098.0), (2015, 2553.0, 7351.0),
+    (2016, 2262.0, 6527.0), (2017, 1675.0, 1248.0), (2018, 1347.0, 6434.0),
+    (2019, 2054.0, 8920.0), (2020, 1177.0, 7747.0), (2021, 1367.0, 9771.0),
+    (2022, 1484.0, 9542.0),
+]
+
+
+def _legacy_frame(rows, **names):
+    """Annual frame in the legacy era, so era-guarded metrics compute."""
+    first, second = names["first"], names["second"]
+    return pd.DataFrame(
+        [
+            {
+                "fiscal_year": year,
+                first: a,
+                second: b,
+                "source_era": "legacy_compustat",
+            }
+            for (year, a, b) in rows
+        ]
+    )
+
+
+def test_golden_negative_equity_strong_earnings_azo() -> None:
+    """AZO FY2022: equity -3,538.913 with 10 of 10 profitable years -> 1.0."""
+    frame = _legacy_frame(_AZO, first="ceqq_q4", second="niq_annual")
+    metric = _metric("negative_equity_strong_earnings")
+    point = {p.as_of_year: p for p in metric.compute(frame)}[2022]
+    assert point.value == pytest.approx(1.0)
+    assert point.window_years_present == 10
+
+
+def test_golden_negative_equity_requires_the_profit_record_azo() -> None:
+    """The same negative equity WITHOUT the profit record must not qualify.
+
+    Guards the conjunction: negative equity alone is not the signal.
+    """
+    weakened = [(y, e, -1.0 if y >= 2019 else n) for (y, e, n) in _AZO]
+    frame = _legacy_frame(weakened, first="ceqq_q4", second="niq_annual")
+    metric = _metric("negative_equity_strong_earnings")
+    point = {p.as_of_year: p for p in metric.compute(frame)}[2022]
+    assert point.value == pytest.approx(0.0), "6 of 10 profitable years fails the 8 floor"
+
+
+def test_golden_capex_pct_net_income_ko_fy2022() -> None:
+    """KO 2013-2022: 18,875 / 73,222 = 0.257778.
+
+    Coca-Cola reinvests about a quarter of earnings in fixed assets, which sits
+    just above the platform spec's '< 25% great' anchor and well inside its
+    '< 50% good' one -- the expected shape for a low-capital-intensity brand.
+    """
+    frame = _legacy_frame(_KO_CAPEX, first="capxy_annual", second="niq_annual")
+    metric = _metric("capex_pct_net_income_avg10y")
+    point = {p.as_of_year: p for p in metric.compute(frame)}[2022]
+    assert point.value == pytest.approx(18875.0 / 73222.0)
+    assert point.value == pytest.approx(0.257778, abs=1e-6)
+
+
+def test_golden_capex_pct_nulls_across_the_provider_boundary() -> None:
+    """capxy is CONTRADICTED at 0.551, so a mixed window must not sum."""
+    rows = [(y, c, n) for (y, c, n) in _KO_CAPEX]
+    frame = _legacy_frame(rows, first="capxy_annual", second="niq_annual")
+    frame.loc[frame["fiscal_year"] == 2022, "source_era"] = "simfin"
+    metric = _metric("capex_pct_net_income_avg10y")
+    point = {p.as_of_year: p for p in metric.compute(frame)}[2022]
+    assert point.value is None
+    assert point.reason_code == ReasonCode.MIXED_ERA_WINDOW

@@ -1,8 +1,51 @@
 # SP3 Completion — Remaining Metric Catalog
 
-Status: **PART 1 IMPLEMENTED** (gross-profit family, 5 metrics) — 2026-07-26,
-branch `feature/sp3-gross-profit-metrics`. Part 2 (5 remaining trend metrics)
-designed below, not yet built.
+Status: **IMPLEMENTED** — 2026-07-26. Part 1 (gross-profit family, 5 metrics) in
+PR #12; Part 2 (5 remaining trend metrics) on branch
+`feature/sp3-trend-metrics`. **SP3 is complete apart from the three
+price-dependent metrics, which are SP5 work by dependency (§1.3).**
+
+**Real-corpus verification of Part 2 (2026-07-26 rebuild).** Measured, not
+expected:
+
+*Warehouse.* `metrics_trend` 46,773 → **67,853** rows, 10 → **15** metrics.
+Combined with Part 1, SP3 took the two Stage 2 tables from 18 metrics to **28**.
+
+| metric | rows | values | mixed_era_window | insufficient_history | missing_input | negative_base |
+|---|---|---|---|---|---|---|
+| `negative_equity_strong_earnings` | 4,216 | 4,184 | — | 28 | 4 | — |
+| `capex_pct_net_income_avg10y` | 4,216 | 3,318 | 649 | 36 | — | 213 |
+| `receivables_pct_sales_trend_10y` | 4,216 | 3,461 | 665 | 90 | — | — |
+| `inventory_earnings_correspondence_10y` | 4,216 | 4,099 | — | 117 | — | — |
+| `goodwill_trend` | 4,216 | 3,418 | 654 | 144 | — | — |
+
+The two unguarded metrics show **zero** `mixed_era_window`, and the three guarded
+ones show 649–665: the guard fires exactly where declared and nowhere else.
+`capex_pct`'s 213 `negative_base` are windows whose cumulative net income is
+negative — correctly refused rather than reported as a signed percentage.
+
+*Goldens, read back from the rebuilt warehouse (not fixtures):*
+`AZO` FY2022 `negative_equity_strong_earnings` = **1.0** (equity −3,538.9 with 10
+of 10 profitable years); `KO` FY2022 `capex_pct_net_income_avg10y` =
+**0.257778** = 18,875 / 73,222, just above the spec's "< 25% great" anchor and
+well inside "< 50% good" — the expected shape for a low-capital-intensity brand.
+
+*Real-world cohort check.* 23 companies carry
+`negative_equity_strong_earnings = 1` at FY2022: AON, AZO, CAH, DPZ, FICO, FTNT,
+HCA, HLT, HPQ, LII, LOW, MAS, MCD, MCK, MO, MSCI, MTCH, ORLY, PM, SBUX, TDG,
+VRSN, YUM. That is a recognisable roster of sustained-buyback franchises with
+negative book equity, which is the cohort the book's special case describes —
+independent evidence that the conjunction identifies the intended companies
+rather than distressed ones.
+
+*`goodwill_trend` is legacy-only in effect, as designed.* Windows ending
+2006–2022: 3,308 values of 3,425 rows (97%). Windows ending 2023+: **110 of 791
+(14%)** — and those 110 are correct, not leakage: era resolution serves FY2023
+from legacy for many tickers, so those windows are genuinely legacy-pure.
+
+*Invariants.* 0 `inf`/`NaN`, 0 value-XOR-reason violations across 67,853 rows.
+
+*Gate.* 301 tests pass (286 at branch point, +15), `ruff` and `compileall` clean.
 
 **Real-corpus verification of Part 1 (2026-07-26 rebuild).** Measured, not
 expected:
