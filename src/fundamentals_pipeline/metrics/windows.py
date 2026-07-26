@@ -13,6 +13,7 @@ from collections.abc import Callable
 import pandas as pd
 
 from ..contracts.stage2_metrics_schema import MetricPoint, ReasonCode
+from . import gross_profit as gp
 
 SeriesFn = Callable[[pd.DataFrame], pd.Series]
 ComputeFn = Callable[[pd.DataFrame], list[MetricPoint]]
@@ -36,6 +37,32 @@ def ratio(num: str, den: str) -> SeriesFn:
         numerator = pd.to_numeric(indexed[num], errors="coerce")
         denominator = pd.to_numeric(indexed[den], errors="coerce")
         return numerator / denominator.where(denominator != 0)
+
+    return _fn
+
+
+def gross_margin_series() -> SeriesFn:
+    """Annual gross margin: `(saleq - cogsq - dpq) / saleq`, indexed by year.
+
+    Uses the shared rule in `metrics/gross_profit.py`, which records why
+    depreciation is subtracted (Compustat states `cogsq` pre-depreciation; the
+    uncorrected form overstates published gross margin by a median 4.09pp) and
+    the disclosed conservative bias.
+
+    A non-positive revenue yields NaN rather than a signed ratio, matching
+    `ratio`'s zero-denominator policy. The arithmetic is legacy-era only, so any
+    metric using this series must be era-guarded.
+    """
+
+    def _fn(frame: pd.DataFrame) -> pd.Series:
+        indexed = frame.set_index("fiscal_year").sort_index()
+        terms = [
+            pd.to_numeric(indexed[gp.annual_field(field)], errors="coerce")
+            for field in (gp.REVENUE_FIELD, gp.COST_FIELD, gp.DEPRECIATION_FIELD)
+        ]
+        revenue, cost, depreciation = terms
+        profit = gp.gross_profit(revenue, cost, depreciation)
+        return profit / revenue.where(revenue > 0)
 
     return _fn
 

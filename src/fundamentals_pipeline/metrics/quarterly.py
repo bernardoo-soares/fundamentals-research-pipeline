@@ -20,6 +20,7 @@ import pandas as pd
 from ..contracts.field_era_semantics import semantics_for
 from ..contracts.metric_reason_codes import ReasonCode
 from ..contracts.metrics_quarterly_schema import QuarterPoint
+from . import gross_profit as gp
 
 ComputeFn = Callable[[pd.DataFrame], list[QuarterPoint]]
 
@@ -309,6 +310,89 @@ def apply_era_restriction(
             )
         )
     return restricted
+
+
+def ttm_gross_profit(prepared: pd.DataFrame) -> dict[int, TtmResult]:
+    """TTM gross profit: `saleq_ttm - cogsq_ttm - dpq_ttm` (legacy-era arithmetic).
+
+    Applies the shared rule in `metrics/gross_profit.py`, which carries the
+    evidence for subtracting depreciation and the disclosed conservative bias.
+
+    Mixed when any leg is mixed: `cogsq` is declared `eras_equivalent=False`, so
+    a four-quarter window spanning the provider boundary is impure. A quarter
+    missing any leg yields no entry, which the callers map to `missing_input`.
+    """
+    revenue = ttm_flow(prepared, gp.REVENUE_FIELD)
+    cost = ttm_flow(prepared, gp.COST_FIELD)
+    depreciation = ttm_flow(prepared, gp.DEPRECIATION_FIELD)
+    out: dict[int, TtmResult] = {}
+    for as_of, sales in revenue.items():
+        cogs = cost.get(as_of)
+        dep = depreciation.get(as_of)
+        if cogs is None or dep is None:
+            continue
+        out[as_of] = TtmResult(
+            gp.gross_profit(sales.total, cogs.total, dep.total),
+            sales.mixed_non_equivalent
+            or cogs.mixed_non_equivalent
+            or dep.mixed_non_equivalent,
+        )
+    return out
+
+
+def gross_margin_metric() -> ComputeFn:
+    """`(saleq_ttm - cogsq_ttm - dpq_ttm) / saleq_ttm`; see `ttm_gross_profit`."""
+
+    def _compute(frame: pd.DataFrame) -> list[QuarterPoint]:
+        prepared = _prepare(frame)
+        profit = ttm_gross_profit(prepared)
+        revenue = ttm_flow(prepared, gp.REVENUE_FIELD)
+
+        def value_for(as_of: int):
+            gross = profit.get(as_of)
+            sales = revenue.get(as_of)
+            if gross is None or sales is None:
+                return None, ReasonCode.MISSING_INPUT, None
+            if gross.mixed_non_equivalent or sales.mixed_non_equivalent:
+                return None, ReasonCode.MIXED_ERA_WINDOW, None
+            reason = _denominator_reason(sales.total)
+            if reason is not None:
+                return None, reason, None
+            return gross.total / sales.total, None, None
+
+        return _points_over_frame(prepared, value_for)
+
+    return _compute
+
+
+def ttm_over_gross_profit(field: str) -> ComputeFn:
+    """`field_ttm / gross_profit_ttm`; see `ttm_gross_profit`.
+
+    A gross profit of exactly 0 yields `zero_denominator` and a negative one
+    `negative_base`: selling below cost is real, but it makes the ratio
+    meaningless, so it is reasoned-null rather than reported.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[QuarterPoint]:
+        prepared = _prepare(frame)
+        numerator = ttm_flow(prepared, field)
+        profit = ttm_gross_profit(prepared)
+
+        def value_for(as_of: int):
+            num = numerator.get(as_of)
+            gross = profit.get(as_of)
+            if num is None or gross is None:
+                return None, ReasonCode.MISSING_INPUT, None
+            if num.mixed_non_equivalent or gross.mixed_non_equivalent:
+                return None, ReasonCode.MIXED_ERA_WINDOW, None
+            reason = _denominator_reason(gross.total)
+            if reason is not None:
+                return None, reason, None
+            return num.total / gross.total, None, None
+
+        return _points_over_frame(prepared, value_for)
+
+    return _compute
 
 
 def presence_flag(field: str, *, threshold: float) -> ComputeFn:

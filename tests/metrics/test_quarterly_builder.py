@@ -7,6 +7,7 @@ import pytest
 from fundamentals_pipeline.contracts.era_resolution import SourceEra
 from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
 from fundamentals_pipeline.metrics.quarterly_builder import build_metrics_quarterly
+from fundamentals_pipeline.metrics.quarterly_registry import QUARTERLY_REGISTRY
 
 
 def _seed_quarterly(path, rows) -> None:
@@ -26,7 +27,8 @@ def _aapl_rows():
         {"ticker": "AAPL", "year": y, "quarter": q, "saleq": s, "niq": n,
          "atq": 352583.0, "ceqq": 62146.0, "ltq": 290437.0, "tstkq": None,
          "dlcq": None, "dlttq": None, "xintq": None, "oiadpq": None,
-         "actq": None, "lctq": None, "source_era": "simfin"}
+         "actq": None, "lctq": None, "cogsq": None, "dpq": None,
+         "xsgaq": None, "xrdq": None, "source_era": "simfin"}
         for (y, q, s, n) in data
     ]
 
@@ -37,7 +39,7 @@ def test_build_writes_metrics_quarterly(tmp_path) -> None:
 
     result = build_metrics_quarterly(warehouse_path=db)
 
-    assert result["metric_count"] == 9
+    assert result["metric_count"] == len(QUARTERLY_REGISTRY)
     assert result["metrics_quarterly_rows"] > 0
 
     conn = duckdb.connect(str(db), read_only=True)
@@ -70,6 +72,7 @@ def test_builder_applies_era_restriction(tmp_path):
     ko = [
         {"ticker": "KO", "year": 2019, "quarter": q, "xintq": x, "oiadpq": o,
          "saleq": None, "niq": None, "atq": None, "ceqq": None, "ltq": None,
+         "cogsq": None, "dpq": None, "xsgaq": None, "xrdq": None,
          "tstkq": None, "dlcq": None, "dlttq": None, "actq": None,
          "lctq": None, "source_era": str(SourceEra.LEGACY)}
         for q, x, o in [(1, 245.0, 2560.0), (2, 236.0, 3080.0),
@@ -78,6 +81,7 @@ def test_builder_applies_era_restriction(tmp_path):
     agilent = [
         {"ticker": "A", "year": 2023, "quarter": q, "xintq": 10.0,
          "oiadpq": 500.0, "saleq": None, "niq": None, "atq": None,
+         "cogsq": None, "dpq": None, "xsgaq": None, "xrdq": None,
          "ceqq": None, "ltq": None, "tstkq": None, "dlcq": None,
          "dlttq": None, "actq": None, "lctq": None,
          "source_era": str(SourceEra.SIMFIN)}
