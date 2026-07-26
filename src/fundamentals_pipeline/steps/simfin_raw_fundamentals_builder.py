@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..connectors.simfin_dataset_loader import SimfinConnector
 from ..contracts.simfin_aliases import SIMFIN_TICKER_ALIASES
+from ..contracts.source_families import SOURCE_FAMILY_COLUMN, SourceFamily
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
@@ -34,13 +35,13 @@ SIMFIN_MISSING_FIELD_COLUMNS: tuple[str, ...] = (
     "quarter",
     "field_name",
     "reason",
-    "source_family",
+    SOURCE_FAMILY_COLUMN,
 )
 SIMFIN_CONFLICT_COLUMNS: tuple[str, ...] = (
     "ticker",
     "year",
     "quarter",
-    "source_family",
+    SOURCE_FAMILY_COLUMN,
     "mapped_non_null_count",
 )
 SIMFIN_ALIAS_COLUMNS: tuple[str, ...] = (
@@ -51,19 +52,23 @@ SIMFIN_ALIAS_COLUMNS: tuple[str, ...] = (
     "years_present",
 )
 SIMFIN_FAMILY_PRIORITY: dict[str, int] = {
-    "banks": 0,
-    "insurance": 1,
-    "general": 2,
+    SourceFamily.BANKS: 0,
+    SourceFamily.INSURANCE: 1,
+    SourceFamily.GENERAL: 2,
 }
 SIMFIN_FAMILY_DATASETS: dict[str, tuple[str, str, str]] = {
-    "general": ("income_general", "balance_general", "cashflow_general"),
-    "banks": ("income_banks", "balance_banks", "cashflow_banks"),
-    "insurance": ("income_insurance", "balance_insurance", "cashflow_insurance"),
+    SourceFamily.GENERAL: ("income_general", "balance_general", "cashflow_general"),
+    SourceFamily.BANKS: ("income_banks", "balance_banks", "cashflow_banks"),
+    SourceFamily.INSURANCE: (
+        "income_insurance",
+        "balance_insurance",
+        "cashflow_insurance",
+    ),
 }
 SIMFIN_ANNUAL_CASHFLOW_FAMILY_DATASETS: dict[str, str] = {
-    "general": "cashflow_general_annual",
-    "banks": "cashflow_banks_annual",
-    "insurance": "cashflow_insurance_annual",
+    SourceFamily.GENERAL: "cashflow_general_annual",
+    SourceFamily.BANKS: "cashflow_banks_annual",
+    SourceFamily.INSURANCE: "cashflow_insurance_annual",
 }
 SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
     "Net Cash from Operating Activities": "Net Cash from Operating Activities__annual",
@@ -73,10 +78,12 @@ SIMFIN_ANNUAL_SUPPORT_COLUMN_MAP: dict[str, str] = {
 }
 SIMFIN_CASHFLOW_DA_COLUMN = "Depreciation & Amortization__cashflow"
 
-# Staging-side provenance: which SimFin family statement served the row. Kept
-# in the staged CSV so the cross-era audit can report agreement per family;
-# NOT part of STAGE1_OUTPUT_COLUMNS, so the published schema is unchanged.
-SOURCE_FAMILY_COLUMN = "source_family"
+# `SOURCE_FAMILY_COLUMN` and `SourceFamily` are imported from
+# `contracts/source_families.py` rather than defined here, so this builder and
+# the cross-era audit that groups on its output cannot drift apart. The column
+# is staging-side provenance -- which SimFin family statement served the row --
+# and is deliberately NOT part of `STAGE1_OUTPUT_COLUMNS`, so the published
+# schema is unchanged by its presence.
 
 
 def _normalize_ticker(value: object) -> str | None:
@@ -328,7 +335,7 @@ def _derive_eps(frame: pd.DataFrame) -> pd.Series:
 def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame:
     """Map one SimFin family frame into the raw fundamentals contract."""
     if frame.empty:
-        return pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"])
+        return pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN, "mapped_non_null_count"])
 
     out = pd.DataFrame(
         {
@@ -361,7 +368,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["cshfdq"] = _numeric_series(frame, "Shares (Diluted)")
     out["cshoq"] = _numeric_series(frame, "Shares (Basic)")
 
-    if family == "general":
+    if family == SourceFamily.GENERAL:
         out["saleq"] = _numeric_series(frame, "Revenue")
         out["cheq"] = _numeric_series(
             frame, "Cash, Cash Equivalents & Short Term Investments"
@@ -378,7 +385,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xsgaq"] = _positive_expense(frame, "Selling, General & Administrative")
         out["xrdq"] = _positive_expense(frame, "Research & Development")
         out["invtq"] = _numeric_series(frame, "Inventories")
-    elif family == "banks":
+    elif family == SourceFamily.BANKS:
         # SimFin's bank Revenue is a narrower construction than Compustat's
         # total revenue: measured FY2023 agreement 0.000 (median 53.3% off,
         # ratio 1.533), and no Compustat column reproduces it (tiiq 0.087 is
@@ -409,7 +416,7 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xsgaq"] = _empty_numeric_series(frame)
         out["xrdq"] = _empty_numeric_series(frame)
         out["invtq"] = _empty_numeric_series(frame)
-    elif family == "insurance":
+    elif family == SourceFamily.INSURANCE:
         # saleq is NOT nulled here: measured FY2023 agreement 0.627 comes with
         # median relative difference 0.0046 and ratio 0.999, so the concept
         # matches and only a tail diverges -- a different defect class from the
@@ -444,9 +451,9 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["cshopq"] = _empty_numeric_series(frame)
     out["ltq"] = _numeric_series(frame, "Total Liabilities")
     out["dpq"] = _numeric_series(frame, SIMFIN_CASHFLOW_DA_COLUMN)
-    out["source_family"] = family
+    out[SOURCE_FAMILY_COLUMN] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)
-    return out[[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"]]
+    return out[[*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN, "mapped_non_null_count"]]
 
 
 def _select_best_family_rows(
@@ -454,11 +461,11 @@ def _select_best_family_rows(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Select the strongest family candidate per ticker-year-quarter."""
     if candidates.empty:
-        empty = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family"])
+        empty = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN])
         return empty, pd.DataFrame(columns=SIMFIN_CONFLICT_COLUMNS)
 
     ranked = candidates.copy()
-    ranked["source_priority"] = ranked["source_family"].map(SIMFIN_FAMILY_PRIORITY).fillna(99)
+    ranked["source_priority"] = ranked[SOURCE_FAMILY_COLUMN].map(SIMFIN_FAMILY_PRIORITY).fillna(99)
     ranked = ranked.sort_values(
         ["ticker", "year", "quarter", "mapped_non_null_count", "source_priority"],
         ascending=[True, True, True, False, True],
@@ -471,11 +478,11 @@ def _select_best_family_rows(
         conflicts = pd.DataFrame(columns=SIMFIN_CONFLICT_COLUMNS)
     else:
         conflicts = conflicts[
-            ["ticker", "year", "quarter", "source_family", "mapped_non_null_count"]
+            ["ticker", "year", "quarter", SOURCE_FAMILY_COLUMN, "mapped_non_null_count"]
         ].reset_index(drop=True)
 
     selected = ranked.drop_duplicates(subset=key, keep="first").reset_index(drop=True)
-    return selected[[*STAGE1_RAW_COLUMNS, "source_family"]], conflicts
+    return selected[[*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN]], conflicts
 
 
 def _write_year_partitions(
@@ -584,7 +591,7 @@ def _build_missing_fields_report(frame: pd.DataFrame) -> pd.DataFrame:
 
     rows: list[dict[str, object]] = []
     for field in SIMFIN_FIELDS:
-        subset = frame[frame[field].isna()][["ticker", "year", "quarter", "source_family"]]
+        subset = frame[frame[field].isna()][["ticker", "year", "quarter", SOURCE_FAMILY_COLUMN]]
         for _, row in subset.iterrows():
             rows.append(
                 {
@@ -593,7 +600,7 @@ def _build_missing_fields_report(frame: pd.DataFrame) -> pd.DataFrame:
                     "quarter": int(row["quarter"]),
                     "field_name": field,
                     "reason": "null_simfin_field",
-                    "source_family": row["source_family"],
+                    SOURCE_FAMILY_COLUMN: row[SOURCE_FAMILY_COLUMN],
                 }
             )
     return pd.DataFrame(rows, columns=SIMFIN_MISSING_FIELD_COLUMNS)
@@ -713,7 +720,7 @@ def build_simfin_raw_fundamentals(
     if nonempty_candidates:
         candidates = pd.concat(nonempty_candidates, ignore_index=True)
     else:
-        candidates = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, "source_family", "mapped_non_null_count"])
+        candidates = pd.DataFrame(columns=[*STAGE1_RAW_COLUMNS, SOURCE_FAMILY_COLUMN, "mapped_non_null_count"])
     selected, conflicts = _select_best_family_rows(candidates)
     selected = _expand_requested_ticker_rows(
         selected,

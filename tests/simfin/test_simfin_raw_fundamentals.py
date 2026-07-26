@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from fundamentals_pipeline import __main__ as cli
 from fundamentals_pipeline.connectors.simfin_dataset_loader import SimfinConnector
+from fundamentals_pipeline.contracts.source_families import (
+    SOURCE_FAMILY_COLUMN,
+    SourceFamily,
+    declared_families,
+)
 from fundamentals_pipeline.steps.simfin_raw_fundamentals_builder import (
     _build_family_canonical,
     build_simfin_raw_fundamentals,
@@ -863,3 +869,23 @@ def test_general_family_keeps_saleq_cheq_and_rectq():
     assert out["saleq"].iloc[0] == 25000.0
     assert out["cheq"].iloc[0] == 333000.0
     assert out["rectq"].iloc[0] == 55000.0
+
+
+def test_builder_emits_only_declared_family_names():
+    """The emitted `source_family` must come from the declared vocabulary.
+
+    The audit resolves per-family agreement thresholds by matching on this
+    string, so a family name the contract does not declare would silently fall
+    back to the field-level threshold instead of its declared override.
+    """
+    for family in SourceFamily:
+        out = _build_family_canonical(_financial_frame(), family=family)
+        emitted = set(out[SOURCE_FAMILY_COLUMN])
+        assert emitted == {str(family)}
+        assert emitted <= declared_families()
+
+
+def test_unsupported_family_is_rejected():
+    """An unrecognised family must fail loudly, not emit a partial mapping."""
+    with pytest.raises(ValueError, match="Unsupported SimFin family"):
+        _build_family_canonical(_financial_frame(), family="reits")

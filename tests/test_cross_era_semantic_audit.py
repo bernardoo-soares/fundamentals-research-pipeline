@@ -6,6 +6,10 @@ import pandas as pd
 import pytest
 
 from fundamentals_pipeline import __main__ as cli
+from fundamentals_pipeline.contracts.source_families import (
+    POOLED_FAMILY,
+    SOURCE_FAMILY_COLUMN,
+)
 from fundamentals_pipeline.core.exceptions import CrossEraContradictionError
 from fundamentals_pipeline.steps.cross_era_semantic_audit import (
     Verdict,
@@ -31,6 +35,139 @@ def _frames(legacy_values, simfin_values, field="dvy"):
         pd.DataFrame({**key, field: legacy_values}),
         pd.DataFrame({**key, field: simfin_values}),
     )
+
+
+def _family_frames(spec, field="dvy"):
+    """Build era frames whose SimFin side carries a `source_family` column.
+
+    `spec` maps a family name to `(n_rows, n_agreeing)`. Agreeing rows are
+    identical on both sides; disagreeing rows are 50% apart, far outside the
+    1% tolerance. Used to construct the masking scenario: a pooled rate that
+    clears its threshold while one family sits below it.
+    """
+    tickers, families, legacy_values, simfin_values = [], [], [], []
+    index = 0
+    for family, (rows, agreeing) in spec.items():
+        for position in range(rows):
+            tickers.append(f"T{index}")
+            families.append(family)
+            simfin_values.append(100.0)
+            legacy_values.append(100.0 if position < agreeing else 150.0)
+            index += 1
+    total = len(tickers)
+    key = {"ticker": tickers, "year": [2023] * total, "quarter": [4] * total}
+    return (
+        pd.DataFrame({**key, field: legacy_values}),
+        pd.DataFrame({**key, field: simfin_values, SOURCE_FAMILY_COLUMN: families}),
+    )
+
+
+def test_family_below_threshold_raises_even_when_pooled_agrees(tmp_path):
+    """The masking regression: a family must be judged on its own rows.
+
+    This is the exact shape that let `oiadpq` (banks 0.000) and then `saleq`
+    (banks 0.000 on a passing pooled 0.869) reach the warehouse. Pooled here is
+    130/140 = 0.929, clearing dvy's 0.90, while insurance sits at 0.50.
+    """
+    legacy, simfin = _family_frames({"general": (120, 120), "insurance": (20, 10)})
+    with pytest.raises(CrossEraContradictionError) as error:
+        run_cross_era_audit(
+            legacy_frame=legacy,
+            simfin_frame=simfin,
+            reports_dir=tmp_path,
+            year=2023,
+            fields=("dvy",),
+        )
+    assert error.value.fields == ("dvy",)
+    report = pd.read_csv(tmp_path / "cross_era_reconciliation_2023.csv")
+    pooled = report[report[SOURCE_FAMILY_COLUMN] == POOLED_FAMILY].iloc[0]
+    insurance = report[report[SOURCE_FAMILY_COLUMN] == "insurance"].iloc[0]
+    assert pooled["verdict"] == Verdict.AGREE, "pooled behaviour must be unchanged"
+    assert insurance["verdict"] == Verdict.CONTRADICTION
+
+
+def test_family_rows_carry_a_verdict():
+    """Per-family rows previously carried `verdict = None` by design."""
+    legacy, simfin = _family_frames({"general": (30, 30), "insurance": (30, 30)})
+    report = reconcile_frames(legacy, simfin, fields=("dvy",))
+    families = report[report[SOURCE_FAMILY_COLUMN] != POOLED_FAMILY]
+    assert len(families) == 2
+    assert families["verdict"].notna().all()
+    assert set(families["verdict"]) == {Verdict.AGREE}
+
+
+def test_family_below_the_overlap_floor_does_not_raise(tmp_path):
+    """An unmeasurable family reports insufficient_overlap and never fails.
+
+    A family whose data was deliberately nulled (banks `saleq`, n=0) must not
+    raise -- there is nothing to compare, which is the correct outcome, not a
+    contradiction.
+    """
+    legacy, simfin = _family_frames({"general": (120, 120), "insurance": (5, 0)})
+    result = run_cross_era_audit(
+        legacy_frame=legacy,
+        simfin_frame=simfin,
+        reports_dir=tmp_path,
+        year=2023,
+        fields=("dvy",),
+    )
+    assert result["contradiction_count"] == 0
+    report = pd.read_csv(tmp_path / "cross_era_reconciliation_2023.csv")
+    insurance = report[report[SOURCE_FAMILY_COLUMN] == "insurance"].iloc[0]
+    assert insurance["verdict"] == Verdict.INSUFFICIENT_OVERLAP
+
+
+def test_contradiction_details_name_the_failing_family(tmp_path):
+    """Attribution must be diagnosable: which family failed, not just which field."""
+    legacy, simfin = _family_frames({"general": (120, 120), "insurance": (20, 10)})
+    with pytest.raises(CrossEraContradictionError):
+        run_cross_era_audit(
+            legacy_frame=legacy,
+            simfin_frame=simfin,
+            reports_dir=tmp_path,
+            year=2023,
+            fields=("dvy",),
+        )
+    report = pd.read_csv(tmp_path / "cross_era_reconciliation_2023.csv")
+    failing = report[report["verdict"] == Verdict.CONTRADICTION]
+    assert list(failing[SOURCE_FAMILY_COLUMN]) == ["insurance"]
+
+
+def test_contradiction_fields_are_deduplicated_across_rows(tmp_path):
+    """A field failing both pooled and per-family must be named once."""
+    legacy, simfin = _family_frames({"general": (60, 0), "insurance": (60, 0)})
+    with pytest.raises(CrossEraContradictionError) as error:
+        run_cross_era_audit(
+            legacy_frame=legacy,
+            simfin_frame=simfin,
+            reports_dir=tmp_path,
+            year=2023,
+            fields=("dvy",),
+        )
+    assert error.value.fields == ("dvy",)
+    result_details = pd.read_csv(tmp_path / "cross_era_reconciliation_2023.csv")
+    failing = result_details[result_details["verdict"] == Verdict.CONTRADICTION]
+    assert len(failing) == 3, "pooled + both families all fail"
+
+
+def test_declared_family_override_suppresses_only_its_own_family():
+    """A declared override must scope to its family, not the field.
+
+    `saleq` declares insurance at 0.50. An insurance family at 0.60 must pass
+    while a general family at the same rate still fails against the 0.80
+    field-level threshold -- otherwise the override would silently relax the
+    field everywhere, which is the muting failure mode the contract guards.
+    """
+    legacy, simfin = _family_frames(
+        {"general": (20, 12), "insurance": (20, 12)}, field="saleq"
+    )
+    report = reconcile_frames(legacy, simfin, fields=("saleq",)).set_index(
+        SOURCE_FAMILY_COLUMN
+    )
+    assert report.loc["insurance", "agreement_rate"] == 0.60
+    assert report.loc["general", "agreement_rate"] == 0.60
+    assert report.loc["insurance", "verdict"] == Verdict.AGREE
+    assert report.loc["general", "verdict"] == Verdict.CONTRADICTION
 
 
 def test_agreeing_field_gets_agree_verdict():
@@ -126,6 +263,35 @@ def test_audit_returns_structured_result_when_clean(tmp_path):
     )
     assert result["contradiction_count"] == 0
     assert result["fields_compared"] == 1
+    assert result["contradiction_details"] == ()
+
+
+def test_result_attributes_each_contradiction_to_its_family(tmp_path):
+    """`contradiction_details` is the diagnosable half of the result contract.
+
+    `contradiction_fields` alone cannot distinguish a whole-field divergence
+    from a single-family one, which is the distinction PRs #9 and #10 turned on.
+    """
+    legacy, simfin = _family_frames({"general": (120, 120), "insurance": (20, 10)})
+    with pytest.raises(CrossEraContradictionError):
+        run_cross_era_audit(
+            legacy_frame=legacy,
+            simfin_frame=simfin,
+            reports_dir=tmp_path,
+            year=2023,
+            fields=("dvy",),
+        )
+    # Re-run against a clean frame to inspect the returned mapping directly.
+    legacy, simfin = _family_frames({"general": (60, 60), "insurance": (60, 60)})
+    result = run_cross_era_audit(
+        legacy_frame=legacy,
+        simfin_frame=simfin,
+        reports_dir=tmp_path,
+        year=2023,
+        fields=("dvy",),
+    )
+    assert result["contradiction_details"] == ()
+    assert result["fields_compared"] == 1, "pooled row count, not total rows"
 
 
 def test_reconcile_is_deterministic():

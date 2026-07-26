@@ -249,6 +249,22 @@ different defect class and is not root-caused here.
    declaring a per-family threshold — is the natural next hardening step, and
    is deliberately out of scope here because it changes audit *policy*, not
    just reporting.
+
+   **RESOLVED 2026-07-26** by `2026-07-26_PER_FAMILY_AUDIT_VERDICTS_DESIGN`.
+   Per-family rows now carry enforceable verdicts and a contradiction on any row
+   raises; null verdicts in the FY2023 report fell from 108 to 0. Two findings
+   from that slice correct the assessment above:
+
+   - The `saleq` insurance row was **not** a tail problem, as characterised here.
+     Measured per-ticker, it is 6 tickers agreeing exactly, 5 within 2.6%, and 2
+     genuinely divergent (AIG max 39.2%, AFL median 13.4% with 0/4 quarters
+     within 1%) — a per-company definitional spectrum, the `oiadpq` shape.
+   - **SimFin holds the as-reported figure here, not Compustat.** AFL FY2023
+     SimFin revenue sums to 18,700 against Aflac's published $18.7B, while
+     Compustat `saleq` sums to 17,729. Both providers agree exactly on AFL net
+     income, isolating the divergence to the revenue line. Insurance `saleq` was
+     therefore kept and declared at a 0.50 threshold rather than nulled — nulling
+     would have deleted the more accurate value.
 3. **Deliberate coverage loss on `cheq`.** The `chq` remap would recover
    insurance at 0.979 and banks at 0.650 but needs a family-aware legacy
    builder. Revisit if a ticker→family classification is ever published to

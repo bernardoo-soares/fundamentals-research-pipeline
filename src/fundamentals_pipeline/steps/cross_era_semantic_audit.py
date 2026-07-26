@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from ..contracts.field_era_semantics import Basis, declared_fields, semantics_for
+from ..contracts.source_families import POOLED_FAMILY, SOURCE_FAMILY_COLUMN
 from ..contracts.stage1_fundamentals_schema import STAGE1_KEY_COLUMNS
 from ..core.exceptions import CrossEraContradictionError
 
@@ -39,10 +40,6 @@ RECONCILIATION_COLUMNS: tuple[str, ...] = (
 # Below this many jointly-present rows, a field's agreement is not measurable
 # and is reported as insufficient_overlap rather than as agreement.
 MIN_OVERLAP_ROWS = 20
-
-# Value of `source_family` on the pooled row that spans every family.
-POOLED_FAMILY = "all"
-SOURCE_FAMILY_COLUMN = "source_family"
 
 
 class Verdict(StrEnum):
@@ -116,8 +113,11 @@ def _field_row(
 ) -> dict[str, object]:
     """Compute one field's reconciliation metrics against its declaration.
 
-    `source_family` is stamped on the row as-given; it carries no null/failure
-    behaviour of its own and defaults to the pooled value `POOLED_FAMILY`.
+    `source_family` selects the agreement threshold via
+    `min_agreement_rate_for`, so a family carrying a declared override is judged
+    against it and every other family against the field-level rate. The pooled
+    row passes `POOLED_FAMILY`, which never carries an override, so its verdict
+    is unaffected by any per-family declaration.
     """
     declaration = semantics_for(field)
     both = legacy.notna() & simfin.notna()
@@ -157,7 +157,7 @@ def _field_row(
 
     if not declaration.eras_equivalent:
         row["verdict"] = Verdict.DIVERGENT_DECLARED
-    elif agreement_rate < declaration.min_agreement_rate:
+    elif agreement_rate < declaration.min_agreement_rate_for(source_family):
         row["verdict"] = Verdict.CONTRADICTION
     else:
         row["verdict"] = Verdict.AGREE
@@ -203,11 +203,9 @@ def reconcile_frames(
             families = comparable[family_column].dropna().unique()
             for family in sorted(str(value) for value in families):
                 mask = comparable[family_column].astype(str) == family
-                family_row = _field_row(
-                    left[mask], right[mask], field, source_family=family
+                rows.append(
+                    _field_row(left[mask], right[mask], field, source_family=family)
                 )
-                family_row["verdict"] = None
-                rows.append(family_row)
     return pd.DataFrame(rows, columns=list(RECONCILIATION_COLUMNS))
 
 
@@ -250,6 +248,11 @@ def run_cross_era_audit(
 ) -> dict[str, object]:
     """Reconcile, write the report, then raise if an equivalence is contradicted.
 
+    A contradiction on *any* row raises -- pooled or per-family. `fields` on the
+    raised error is the deduplicated sorted set of contradicting field names;
+    `contradiction_details` in the returned mapping attributes each failure to
+    its family as `"field/family"`.
+
     The report is written before the raise so a failing run still leaves its
     evidence on disk. Raises `CrossEraContradictionError` rather than exiting:
     mapping failures to exit codes belongs to the CLI.
@@ -261,23 +264,32 @@ def run_cross_era_audit(
     report_path = directory / f"cross_era_reconciliation_{year}.csv"
     report.to_csv(report_path, index=False)
 
+    # Every row is judged, pooled and per-family alike. Collecting only from the
+    # pooled row is what let a family disagree arbitrarily badly while the field
+    # still passed: `saleq` banks agreed 0.000 on a pooled 0.869 that cleared its
+    # declared 0.80 threshold.
     pooled_rows = report[SOURCE_FAMILY_COLUMN] == POOLED_FAMILY
-    contradictions = tuple(
-        report.loc[
-            pooled_rows & (report["verdict"] == Verdict.CONTRADICTION),
-            "field",
-        ].tolist()
+    failing = report["verdict"] == Verdict.CONTRADICTION
+    contradictions = tuple(sorted(set(report.loc[failing, "field"].tolist())))
+    details = tuple(
+        f"{field}/{family}"
+        for field, family in zip(
+            report.loc[failing, "field"],
+            report.loc[failing, SOURCE_FAMILY_COLUMN],
+            strict=True,
+        )
     )
     result: dict[str, object] = {
         "report_path": str(report_path),
         "fields_compared": int(pooled_rows.sum()),
         "contradiction_count": len(contradictions),
         "contradiction_fields": contradictions,
+        "contradiction_details": details,
     }
     if contradictions:
         raise CrossEraContradictionError(
             "Declared era equivalence contradicted by data for: "
-            f"{', '.join(contradictions)}. See {report_path}.",
+            f"{', '.join(details)}. See {report_path}.",
             fields=contradictions,
             report_path=str(report_path),
         )
