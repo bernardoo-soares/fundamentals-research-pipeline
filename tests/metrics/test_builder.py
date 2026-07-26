@@ -4,6 +4,7 @@ import pytest
 
 from fundamentals_pipeline.contracts.stage2_metrics_schema import REASON_CODES
 from fundamentals_pipeline.metrics.builder import build_metrics_trend
+from fundamentals_pipeline.metrics.registry import REGISTRY
 from fundamentals_pipeline.warehouse.connection import open_warehouse, query
 from fundamentals_pipeline.warehouse.schema import create_all_tables
 
@@ -33,7 +34,7 @@ def test_build_writes_metrics_and_reports(tmp_path) -> None:
 
     result = build_metrics_trend(warehouse_path=db)
 
-    assert result["metric_count"] == 9
+    assert result["metric_count"] == len(REGISTRY)
     assert result["metrics_trend_rows"] > 0
     got = query(
         db,

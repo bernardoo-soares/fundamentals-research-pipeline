@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
+from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
 from fundamentals_pipeline.metrics.registry import REGISTRY
+from fundamentals_pipeline.metrics.windows import gross_margin_series, is_era_guarded
 
 
 def test_registry_ids_and_shape() -> None:
@@ -17,6 +20,7 @@ def test_registry_ids_and_shape() -> None:
         "net_margin_ge20_years_10y",
         "buyback_years_10y",
         "dividend_payer_years_10y",
+        "gross_margin_ge40_years_10y",
     ]
     assert len(ids) == len(set(ids))  # unique
     for m in REGISTRY:
@@ -75,7 +79,72 @@ def test_divergent_input_metrics_carry_measured_caveats():
     assert "0.23%" in eps              # median relative difference
 
 
-def test_no_shipped_metric_silently_requires_single_era():
-    """require_single_era exists for the family slice; nothing sets it yet,
-    so this branch changes no output."""
-    assert not any(m.requires_single_era for m in REGISTRY)
+def test_era_guarded_metrics_are_declared_and_enforced():
+    """A metric declaring `requires_single_era` must actually be wrapped.
+
+    Supersedes an earlier assertion that NO metric set the flag, which was true
+    only while the mechanism was unused. `gross_margin_ge40_years_10y` is the
+    first user: its gross-profit arithmetic is legacy-specific, so a window
+    spanning the provider boundary must null rather than compute.
+
+    `validate_registry` enforces the declaration/wrapper match at import time;
+    this pins which metrics opt in, so adding one is a deliberate act with a
+    measurable coverage cost rather than an accident.
+    """
+    guarded = {m.metric_id for m in REGISTRY if m.requires_single_era}
+    assert guarded == {"gross_margin_ge40_years_10y"}
+    for metric in REGISTRY:
+        assert is_era_guarded(metric.compute) == metric.requires_single_era, (
+            metric.metric_id
+        )
+
+
+def test_gross_margin_window_nulls_across_the_provider_boundary():
+    """The guard must bite on a mixed window and pass a pure one."""
+    metric = _metric("gross_margin_ge40_years_10y")
+    def _rows(eras):
+        return pd.DataFrame(
+            [
+                {
+                    "fiscal_year": 2013 + i,
+                    "saleq_annual": 1000.0,
+                    "cogsq_annual": 400.0,
+                    "dpq_annual": 50.0,
+                    "source_era": era,
+                }
+                for i, era in enumerate(eras)
+            ]
+        )
+    # gross margin = (1000-400-50)/1000 = 0.55 > 0.40 in every year
+    pure = {p.as_of_year: p for p in metric.compute(_rows(["legacy_compustat"] * 10))}
+    assert pure[2022].value == pytest.approx(1.0)
+    mixed = {
+        p.as_of_year: p
+        for p in metric.compute(_rows(["legacy_compustat"] * 9 + ["simfin"]))
+    }
+    assert mixed[2022].value is None
+    assert mixed[2022].reason_code == ReasonCode.MIXED_ERA_WINDOW
+
+
+def test_gross_margin_series_subtracts_depreciation():
+    """Guards the root-caused defect at the trend grain.
+
+    Compustat states cogsq before depreciation, so the uncorrected
+    (saleq - cogsq)/saleq overstates published gross margin by a median 4.09pp.
+    Here the corrected margin is 0.55 and the uncorrected 0.60, which straddles
+    nothing -- but with a 0.40 threshold the difference decides membership for
+    companies between the two, which is 12.8% of the corpus.
+    """
+    frame = pd.DataFrame(
+        [
+            {
+                "fiscal_year": 2020,
+                "saleq_annual": 1000.0,
+                "cogsq_annual": 400.0,
+                "dpq_annual": 50.0,
+            }
+        ]
+    )
+    series = gross_margin_series()(frame)
+    assert series.loc[2020] == pytest.approx(0.55)
+    assert series.loc[2020] != pytest.approx(0.60)

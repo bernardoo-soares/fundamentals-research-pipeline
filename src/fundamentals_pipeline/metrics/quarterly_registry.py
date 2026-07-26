@@ -11,15 +11,34 @@ from ..contracts.era_resolution import SourceEra
 from ..contracts.metrics_quarterly_schema import QuarterMetric
 from .quarterly import (
     debt_to_equity_adj_metric,
+    gross_margin_metric,
     presence_flag,
     stock_over_ttm,
     stock_ratio,
+    ttm_over_gross_profit,
     ttm_over_stock,
     ttm_ratio,
 )
 
 TREASURY_PRESENCE_THRESHOLD = 0.0
 _VALID_ERAS = frozenset(SourceEra)
+_LEGACY_ONLY = frozenset({SourceEra.LEGACY})
+
+# Shared by every gross-profit-denominated metric: Compustat states cogsq and
+# xsgaq BEFORE depreciation, so gross profit is saleq - cogsq - dpq and the
+# arithmetic is legacy-specific (SimFin's Cost of Revenue already includes D&A).
+# Full evidence in metrics/quarterly.ttm_gross_profit and spec
+# 2026-07-26_SP3_METRIC_CATALOG_COMPLETION_DESIGN section 2.
+_GROSS_PROFIT_ERA_NOTE = (
+    "LEGACY ERA ONLY: gross profit is saleq_ttm - cogsq_ttm - dpq_ttm because "
+    "Compustat states cogsq before depreciation (the identity saleq - (cogsq + "
+    "xsgaq) = oibdpq holds for 99.69% of 9,035 legacy quarters). SimFin's Cost "
+    "of Revenue already includes D&A, so the correct arithmetic differs by era "
+    "and one formula must not span both (S4.3). SimFin-era rows are null with "
+    "era_not_supported rather than false. Conservative bias: dpq includes D&A "
+    "allocated to SG&A, understating gross profit by a measured 0.14-0.44pp of "
+    "revenue (exact for AAPL and KO FY2021)."
+)
 
 QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     QuarterMetric(
@@ -66,6 +85,48 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "1",
         "1 if tstkq_latest > 0 else 0",
         presence_flag("tstkq", threshold=TREASURY_PRESENCE_THRESHOLD),
+    ),
+    QuarterMetric(
+        "gross_margin",
+        "1",
+        "(saleq_ttm - cogsq_ttm - dpq_ttm) / saleq_ttm. "
+        + _GROSS_PROFIT_ERA_NOTE
+        + " Golden: KO FY2021 (38655 - 13905 - 1452) / 38655 = 23298 / 38655 = "
+        "0.602716, exactly Coca-Cola's published gross margin; the uncorrected "
+        "(saleq - cogsq) form gives 0.640279, overstated by 3.76pp.",
+        gross_margin_metric(),
+        supported_eras=_LEGACY_ONLY,
+    ),
+    QuarterMetric(
+        "sga_pct_gross_profit",
+        "1",
+        "xsgaq_ttm / gross_profit_ttm. "
+        + _GROSS_PROFIT_ERA_NOTE
+        + " Second, smaller bias in the same direction: xsgaq is ALSO stated "
+        "before depreciation, so it understates published SG&A (KO FY2021 "
+        "11,964 against a published 12,144, a 1.5% shortfall).",
+        ttm_over_gross_profit("xsgaq"),
+        supported_eras=_LEGACY_ONLY,
+    ),
+    QuarterMetric(
+        "rd_pct_gross_profit",
+        "1",
+        "xrdq_ttm / gross_profit_ttm. " + _GROSS_PROFIT_ERA_NOTE,
+        ttm_over_gross_profit("xrdq"),
+        supported_eras=_LEGACY_ONLY,
+    ),
+    QuarterMetric(
+        "dep_pct_gross_profit",
+        "1",
+        "dpq_ttm / gross_profit_ttm. "
+        + _GROSS_PROFIT_ERA_NOTE
+        + " Golden: KO FY2021 1452 / 23298 = 0.062323, which reproduces the "
+        "platform spec's own book anchor for this metric ('low is better, KO "
+        "approx 6%'). That anchor is NOT reproducible with the catalog's "
+        "uncorrected gross-profit denominator (1452 / 24750 = 0.058667), so the "
+        "catalog's anchor and its formula disagreed with each other.",
+        ttm_over_gross_profit("dpq"),
+        supported_eras=_LEGACY_ONLY,
     ),
 )
 

@@ -370,8 +370,29 @@ not_applicable_sector | insufficient_history | tstk_unavailable`.
      era-switch year is nulled `mixed_era_window`. Measured finding: SimFin
      populates `xintq` sparsely, so `interest_pct_operating_income` is
      `missing_input` for most SimFin-era quarters (no imputation).
-- **`gross_margin`** and annual-grain variants: deferred (cogsq era issue +
-  annual-grain design). **Scoring, valuation, UI**: not yet built.
+- **`gross_margin`** and the gross-profit family: implemented 2026-07-26
+  (`specs/2026-07-26_SP3_METRIC_CATALOG_COMPLETION_DESIGN.md`), at the quarterly
+  TTM grain, **legacy era only**. Four metrics: `gross_margin`,
+  `sga_pct_gross_profit`, `rd_pct_gross_profit`, `dep_pct_gross_profit`, plus
+  `gross_margin_ge40_years_10y` at the trend grain.
+  **CORRECTION TO §6.2's FORMULA.** The catalog states `gross_margin` as
+  `(saleq − cogsq) / saleq`. That is wrong for the legacy era: Compustat states
+  `cogsq` and `xsgaq` BEFORE depreciation (its identity
+  `saleq − (cogsq + xsgaq) = oibdpq` holds for 99.69% of 9,035 legacy quarters),
+  so the catalog formula computes a *pre-depreciation* margin and overstates the
+  published figure by a median 4.09pp against this metric's own >40% threshold.
+  The shipped formula is `(saleq − cogsq − dpq) / saleq`, which reproduces KO
+  FY2021 at 0.602716 — Coca-Cola's published gross margin — where the catalog
+  form gives 0.640279. It also reproduces §6.2's own `dep_pct_gross_profit`
+  anchor ("KO ≈ 6%") at 0.0623, which the catalog denominator cannot: the
+  catalog's anchor and its formula disagreed with each other.
+  The arithmetic is era-specific (SimFin's Cost of Revenue already includes D&A),
+  which is why the family is legacy-restricted rather than merely caveated.
+- **Annual-grain point variants**: not built and not planned as a separate grain
+  — TTM is the more current form of the same quantity and a third grain would
+  restate it (S2.6). Recorded in the SP3 completion spec §5.1.
+- **Scoring, valuation, UI**: not yet built. `market_cap`, `pe_ttm` and
+  `earnings_yield` are blocked on SP5 `prices_daily` by dependency.
 
 ---
 

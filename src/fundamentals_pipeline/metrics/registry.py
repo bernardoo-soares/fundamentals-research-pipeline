@@ -8,10 +8,15 @@ from .windows import (
     col,
     consistency_fraction_metric,
     count_years_metric,
+    gross_margin_series,
     is_era_guarded,
     ratio,
+    require_single_era,
     up_year_fraction_metric,
 )
+
+GROSS_MARGIN_THRESHOLD = 0.40
+GROSS_MARGIN_WINDOW = 10
 
 REGISTRY: tuple[TrendMetric, ...] = (
     TrendMetric(
@@ -66,6 +71,28 @@ REGISTRY: tuple[TrendMetric, ...] = (
         "dividend_payer_years_10y", "2", 10,
         "count of 10y window years with dvy_annual > 0",
         count_years_metric(col("dvy_annual"), 0.0, 10),
+    ),
+    TrendMetric(
+        "gross_margin_ge40_years_10y", "1", GROSS_MARGIN_WINDOW,
+        "fraction of 10y window years with "
+        "(saleq_annual - cogsq_annual - dpq_annual) / saleq_annual > 0.40 "
+        "(NOTE: depreciation is subtracted because Compustat states cogsq "
+        "BEFORE it -- the identity saleq - (cogsq + xsgaq) = oibdpq holds for "
+        "99.69% of 9,035 legacy quarters. The uncorrected (saleq - cogsq) form "
+        "overstates published gross margin by a median 4.09pp against this "
+        "metric's own 0.40 threshold; KO FY2021 corrected is 0.6027, exactly "
+        "Coca-Cola's published figure, versus 0.6403 uncorrected. "
+        "ERA-GUARDED: the arithmetic is legacy-specific because SimFin's Cost "
+        "of Revenue already includes D&A, and 12.8% of companies cross the 0.40 "
+        "line by provider alone even after the correction, so any window "
+        "spanning the provider boundary is nulled mixed_era_window.)",
+        require_single_era(
+            consistency_fraction_metric(
+                gross_margin_series(), GROSS_MARGIN_THRESHOLD, GROSS_MARGIN_WINDOW
+            ),
+            GROSS_MARGIN_WINDOW - 1,
+        ),
+        requires_single_era=True,
     ),
 )
 

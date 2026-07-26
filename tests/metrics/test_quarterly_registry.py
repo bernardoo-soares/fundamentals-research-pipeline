@@ -16,7 +16,7 @@ from fundamentals_pipeline.metrics.quarterly_registry import (
 METRICS = {m.metric_id: m for m in QUARTERLY_REGISTRY}
 
 
-def test_registry_has_the_nine_slice1_metrics() -> None:
+def test_registry_has_every_declared_quarterly_metric() -> None:
     assert set(METRICS) == {
         "net_margin",
         "roa",
@@ -27,6 +27,11 @@ def test_registry_has_the_nine_slice1_metrics() -> None:
         "lt_debt_payback_years",
         "interest_pct_operating_income",
         "treasury_stock_present",
+        # gross-profit family (SP3 completion); all legacy-era only
+        "gross_margin",
+        "sga_pct_gross_profit",
+        "rd_pct_gross_profit",
+        "dep_pct_gross_profit",
     }
 
 
@@ -166,11 +171,26 @@ def test_interest_pct_is_restricted_to_the_legacy_era():
     assert metric.version == "2", "restricting the computation bumps the version"
 
 
-def test_every_other_metric_remains_unrestricted():
+# Every metric whose computation is era-specific, and why. A metric absent from
+# this set must apply in both eras; adding one here is a deliberate act that
+# costs SimFin-era coverage, so the set is asserted exhaustively.
+_LEGACY_RESTRICTED = {
+    "interest_pct_operating_income",  # both legs diverge across the boundary
+    "gross_margin",  # gross-profit arithmetic is era-specific (dpq)
+    "sga_pct_gross_profit",
+    "rd_pct_gross_profit",
+    "dep_pct_gross_profit",
+}
+
+
+def test_only_the_declared_metrics_are_era_restricted():
     for metric in QUARTERLY_REGISTRY:
-        if metric.metric_id == "interest_pct_operating_income":
-            continue
-        assert metric.supported_eras is None, metric.metric_id
+        expected = (
+            frozenset({SourceEra.LEGACY})
+            if metric.metric_id in _LEGACY_RESTRICTED
+            else None
+        )
+        assert metric.supported_eras == expected, metric.metric_id
 
 
 def test_compute_layer_interest_pct_mixed_era_abbv() -> None:
@@ -217,3 +237,150 @@ def test_compute_layer_interest_pct_mixed_era_abbv() -> None:
     row = next(pt for pt in published if pt.year == 2023 and pt.quarter == 1)
     assert row.value is None
     assert row.reason_code == ReasonCode.MIXED_ERA_WINDOW
+
+
+# --- Real KO FY2021 corpus (warehouse; matches Coca-Cola's 10-K to the $M) ---
+# Compustat states cogsq and xsgaq BEFORE depreciation, so published gross
+# profit is saleq - cogsq - dpq. Sums: saleq 38,655 (KO's published net
+# operating revenues), cogsq 13,905, dpq 1,452, xsgaq 11,964.
+# 13,905 + 1,452 = 15,357 = KO's published cost of goods sold, exactly.
+_KO_2021 = [
+    # year, quarter, saleq, cogsq, dpq, xsgaq
+    (2021, 1, 9020.0, 3139.0, 366.0, 2659.0),
+    (2021, 2, 10129.0, 3404.0, 383.0, 3012.0),
+    (2021, 3, 10042.0, 3615.0, 362.0, 2847.0),
+    (2021, 4, 9464.0, 3747.0, 341.0, 3446.0),
+]
+
+_KO_SALEQ_TTM = 38655.0
+_KO_COGSQ_TTM = 13905.0
+_KO_DPQ_TTM = 1452.0
+_KO_XSGAQ_TTM = 11964.0
+_KO_GROSS_PROFIT = 23298.0  # KO's published FY2021 gross profit
+
+
+def _ko_frame(era: str = "legacy_compustat") -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "ticker": "KO", "year": y, "quarter": q, "saleq": s, "cogsq": c,
+                "dpq": d, "xsgaq": g, "xrdq": None, "source_era": era,
+            }
+            for (y, q, s, c, d, g) in _KO_2021
+        ]
+    )
+
+
+def _restricted_value_at(metric_id, frame, year, quarter):
+    """Compute a metric the way the builder does: compute then apply era restriction."""
+    metric = METRICS[metric_id]
+    points = apply_era_restriction(metric.compute(frame), metric.supported_eras)
+    return next(p for p in points if p.year == year and p.quarter == quarter)
+
+
+def test_golden_gross_profit_ko_fy2021_matches_published() -> None:
+    """The corrected denominator reproduces KO's published gross profit exactly.
+
+    38,655 - 13,905 - 1,452 = 23,298. The catalog's uncorrected
+    (saleq - cogsq) gives 24,750, which is gross profit BEFORE depreciation and
+    is not the line Coca-Cola reports.
+    """
+    assert _KO_SALEQ_TTM - _KO_COGSQ_TTM - _KO_DPQ_TTM == _KO_GROSS_PROFIT
+    assert _KO_COGSQ_TTM + _KO_DPQ_TTM == 15357.0  # published COGS
+
+
+def test_golden_gross_margin_ko_fy2021() -> None:
+    # 23,298 / 38,655 = 0.602716 -- Coca-Cola's published FY2021 gross margin.
+    p = _restricted_value_at("gross_margin", _ko_frame(), 2021, 4)
+    assert p.value == pytest.approx(_KO_GROSS_PROFIT / _KO_SALEQ_TTM)
+    assert p.value == pytest.approx(0.602716, abs=1e-6)
+
+
+def test_golden_gross_margin_rejects_the_uncorrected_formula() -> None:
+    """Guards the defect directly: the pre-depreciation form must not ship.
+
+    (38,655 - 13,905) / 38,655 = 0.640279 overstates the published margin by
+    3.76pp. Measured across 9,003 legacy quarters the median overstatement is
+    4.09pp against a book threshold of >40%.
+    """
+    p = _restricted_value_at("gross_margin", _ko_frame(), 2021, 4)
+    uncorrected = (_KO_SALEQ_TTM - _KO_COGSQ_TTM) / _KO_SALEQ_TTM
+    assert uncorrected == pytest.approx(0.640279, abs=1e-6)
+    assert p.value != pytest.approx(uncorrected, abs=1e-4)
+
+
+def test_golden_dep_pct_gross_profit_ko_reproduces_the_book_anchor() -> None:
+    """1,452 / 23,298 = 0.0623, matching the spec's book anchor 'KO approx 6%'.
+
+    The anchor is NOT reproducible with the catalog's uncorrected denominator
+    (1,452 / 24,750 = 0.0587), so the catalog's anchor and its own formula
+    disagreed. This test pins the anchor, not the formula.
+    """
+    p = _restricted_value_at("dep_pct_gross_profit", _ko_frame(), 2021, 4)
+    assert p.value == pytest.approx(_KO_DPQ_TTM / _KO_GROSS_PROFIT)
+    assert p.value == pytest.approx(0.062323, abs=1e-6)
+
+
+def test_golden_sga_pct_gross_profit_ko_fy2021() -> None:
+    # 11,964 / 23,298 = 0.513520
+    p = _restricted_value_at("sga_pct_gross_profit", _ko_frame(), 2021, 4)
+    assert p.value == pytest.approx(_KO_XSGAQ_TTM / _KO_GROSS_PROFIT)
+    assert p.value == pytest.approx(0.513520, abs=1e-6)
+
+
+@pytest.mark.parametrize(
+    "metric_id",
+    ["gross_margin", "sga_pct_gross_profit", "rd_pct_gross_profit", "dep_pct_gross_profit"],
+)
+def test_gross_profit_family_is_legacy_era_only(metric_id: str) -> None:
+    """The arithmetic is era-specific, so a SimFin row must be nulled, not computed.
+
+    SimFin's Cost of Revenue already includes D&A, so subtracting dpq again
+    would double-count it. era_not_supported, never a false value.
+
+    `xrdq` is supplied here (KO reports none) so that every metric in the family
+    would otherwise produce a value -- otherwise `rd_pct_gross_profit` would
+    null as `missing_input` and this test would pass without exercising the
+    restriction at all.
+    """
+    frame = _ko_frame(era="simfin")
+    frame["xrdq"] = 100.0
+    assert METRICS[metric_id].supported_eras == frozenset({SourceEra.LEGACY})
+    p = _restricted_value_at(metric_id, frame, 2021, 4)
+    assert p.value is None
+    assert p.reason_code == ReasonCode.ERA_NOT_SUPPORTED
+
+
+@pytest.mark.parametrize(
+    "metric_id",
+    ["gross_margin", "sga_pct_gross_profit", "rd_pct_gross_profit", "dep_pct_gross_profit"],
+)
+def test_gross_profit_family_computes_on_legacy_rows(metric_id: str) -> None:
+    """The counterpart: the restriction must not null the era it supports."""
+    frame = _ko_frame()
+    frame["xrdq"] = 100.0
+    p = _restricted_value_at(metric_id, frame, 2021, 4)
+    assert p.value is not None
+    assert p.reason_code is None
+
+
+def test_rd_pct_gross_profit_is_missing_input_when_xrdq_absent() -> None:
+    """KO reports no R&D line: null with a reason, never zero (S4.2)."""
+    p = _restricted_value_at("rd_pct_gross_profit", _ko_frame(), 2021, 4)
+    assert p.value is None
+    assert p.reason_code == ReasonCode.MISSING_INPUT
+
+
+def test_negative_gross_profit_is_reasoned_null() -> None:
+    """Selling below cost is real but makes the ratio meaningless."""
+    frame = pd.DataFrame(
+        [
+            {"ticker": "X", "year": 2021, "quarter": q, "saleq": 100.0,
+             "cogsq": 90.0, "dpq": 30.0, "xsgaq": 10.0, "xrdq": None,
+             "source_era": "legacy_compustat"}
+            for q in (1, 2, 3, 4)
+        ]
+    )
+    p = _restricted_value_at("sga_pct_gross_profit", frame, 2021, 4)
+    assert p.value is None
+    assert p.reason_code == ReasonCode.NEGATIVE_BASE
