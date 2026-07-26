@@ -8,15 +8,28 @@ from .windows import (
     col,
     consistency_fraction_metric,
     count_years_metric,
+    direction_correspondence_metric,
     gross_margin_series,
     is_era_guarded,
+    negative_equity_with_strong_earnings_metric,
     ratio,
     require_single_era,
+    slope_metric,
+    sum_ratio_metric,
     up_year_fraction_metric,
 )
 
 GROSS_MARGIN_THRESHOLD = 0.40
 GROSS_MARGIN_WINDOW = 10
+STANDARD_WINDOW = 10
+
+# The catalog states a hard floor for capex_pct_net_income_avg10y ("both present,
+# >= 8 required") rather than the 0.8*n floor the other combinators apply.
+CAPEX_MIN_WINDOW_YEARS = 8
+
+# The book's durable-advantage special case: negative equity is a strength only
+# alongside a long profit record. 8 of 10 years, per platform spec 6.2.
+NEGATIVE_EQUITY_MIN_PROFITABLE_YEARS = 8
 
 REGISTRY: tuple[TrendMetric, ...] = (
     TrendMetric(
@@ -91,6 +104,94 @@ REGISTRY: tuple[TrendMetric, ...] = (
                 gross_margin_series(), GROSS_MARGIN_THRESHOLD, GROSS_MARGIN_WINDOW
             ),
             GROSS_MARGIN_WINDOW - 1,
+        ),
+        requires_single_era=True,
+    ),
+    TrendMetric(
+        "negative_equity_strong_earnings", "1", STANDARD_WINDOW,
+        "1 if ceqq_q4 < 0 AND niq_annual > 0 in at least 8 of the 10 window "
+        "years, else 0. The book's durable-advantage special case: negative "
+        "book equity created by buybacks or dividends alongside a long profit "
+        "record is a strength, not distress. A conjunction rather than two "
+        "metrics so the negative-equity leg cannot be read alone as a negative "
+        "signal. 0.0 is a real answer; nulls mean a missing equity reading "
+        "(missing_input) or too little earnings history "
+        "(insufficient_history). Not era-guarded: ceqq agrees 0.964 and niq "
+        "0.949 across the provider boundary, both at median 0.0000.",
+        negative_equity_with_strong_earnings_metric(
+            col("ceqq_q4"),
+            col("niq_annual"),
+            STANDARD_WINDOW,
+            min_profitable_years=NEGATIVE_EQUITY_MIN_PROFITABLE_YEARS,
+        ),
+    ),
+    TrendMetric(
+        "capex_pct_net_income_avg10y", "1", STANDARD_WINDOW,
+        "sum(capxy_annual) / sum(niq_annual) over the 10y window years where "
+        "BOTH are present, at least 8 required. Both-present is required so the "
+        "ratio has one consistent basis: summing capex over 10 years against "
+        "earnings over 8 would overstate it by construction. A non-positive "
+        "earnings sum yields negative_base/zero_denominator rather than a "
+        "signed percentage. ERA-GUARDED: capxy is declared cross-era equivalent "
+        "but the FY2023 audit CONTRADICTS it at 0.551 agreement, so a window "
+        "summing capex across the provider boundary is nulled "
+        "mixed_era_window.",
+        require_single_era(
+            sum_ratio_metric(
+                col("capxy_annual"),
+                col("niq_annual"),
+                STANDARD_WINDOW,
+                min_present=CAPEX_MIN_WINDOW_YEARS,
+            ),
+            STANDARD_WINDOW - 1,
+        ),
+        requires_single_era=True,
+    ),
+    TrendMetric(
+        "receivables_pct_sales_trend_10y", "1", STANDARD_WINDOW,
+        "ordinary-least-squares slope per year of rectq_q4 / saleq_annual over "
+        "the 10y window's present years. Negative means receivables are "
+        "shrinking relative to sales, which the book reads as good. Pins the "
+        "catalog's underspecified 'trend of'; OLS rather than last-minus-first "
+        "because the latter is decided by two points and inverts on a single "
+        "outlier year. ERA-GUARDED: rectq is declared cross-era equivalent but "
+        "the FY2023 audit CONTRADICTS it at 0.566, so a window spanning the "
+        "provider boundary is nulled mixed_era_window.",
+        require_single_era(
+            slope_metric(ratio("rectq_q4", "saleq_annual"), STANDARD_WINDOW),
+            STANDARD_WINDOW - 1,
+        ),
+        requires_single_era=True,
+    ),
+    TrendMetric(
+        "inventory_earnings_correspondence_10y", "1", STANDARD_WINDOW,
+        "fraction of consecutive present year-pairs in the 10y window where "
+        "invtq_q4 and niq_annual move in the SAME direction. The book's check "
+        "that inventory and earnings rise together. A zero change on either "
+        "side counts as NOT corresponding: a flat series has no direction, and "
+        "counting it as agreement would let a dormant inventory line read as "
+        "tracking earnings. General family in practice -- financials report no "
+        "inventory, so they null missing_input. Not era-guarded: invtq agrees "
+        "0.901 at median 0.0000 and niq 0.949.",
+        direction_correspondence_metric(
+            col("invtq_q4"), col("niq_annual"), STANDARD_WINDOW
+        ),
+    ),
+    TrendMetric(
+        "goodwill_trend", "1", STANDARD_WINDOW,
+        "fraction of consecutive present year-pairs in the 10y window where "
+        "gdwlq_q4 INCREASED. Pins the catalog's 'YoY changes in gdwlq_q4', "
+        "which names a series rather than a value; the fraction of rising years "
+        "answers how often the company adds goodwill, i.e. serial "
+        "acquisitiveness, which is the book's concern. LEGACY ERA IN FACT: "
+        "gdwlq is 0 of 758 populated in the SimFin era (SimFin's balance file "
+        "has no goodwill column at all), so SimFin-era years contribute "
+        "nothing; ERA-GUARDED so a window straddling the boundary nulls "
+        "mixed_era_window rather than silently reporting a legacy-only "
+        "sub-window as a 10-year result.",
+        require_single_era(
+            up_year_fraction_metric(col("gdwlq_q4"), STANDARD_WINDOW),
+            STANDARD_WINDOW - 1,
         ),
         requires_single_era=True,
     ),

@@ -215,6 +215,200 @@ def count_years_metric(series_fn: SeriesFn, threshold: float, n: int) -> Compute
     return _compute
 
 
+def _consecutive_pairs(years: list[int]) -> list[tuple[int, int]]:
+    """Adjacent year pairs, skipping gaps: (y, y+1) only when both are present.
+
+    Shared by every YoY combinator so the pairing rule is defined once (S2.6).
+    A gap must not be bridged: comparing 2014 to 2016 as if consecutive would
+    silently measure a two-year change as a one-year one.
+    """
+    return [
+        (years[i], years[i + 1])
+        for i in range(len(years) - 1)
+        if years[i + 1] == years[i] + 1
+    ]
+
+
+def sum_ratio_metric(
+    num_fn: SeriesFn, den_fn: SeriesFn, n: int, *, min_present: int
+) -> ComputeFn:
+    """Sum(num) / Sum(den) over window years where BOTH legs are present.
+
+    Both-present is required so the ratio has one consistent denominator basis:
+    summing a numerator over 10 years against a denominator over 8 would
+    overstate the ratio by construction. `min_present` is explicit rather than
+    the shared 0.8*n floor because the catalog states a hard requirement for
+    `capex_pct_net_income_avg10y` (">= 8 required").
+
+    A non-positive denominator sum yields `negative_base`/`zero_denominator`
+    rather than a signed ratio: capex against negative cumulative earnings is
+    not a meaningful percentage.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        numerator = num_fn(frame)
+        denominator = den_fn(frame)
+        if numerator.empty or denominator.empty:
+            return []
+        years = sorted(set(numerator.index) | set(denominator.index))
+        points: list[MetricPoint] = []
+        for as_of in range(years[0] + n - 1, years[-1] + 1):
+            window = range(as_of - n + 1, as_of + 1)
+            pairs = [
+                (numerator.get(year), denominator.get(year))
+                for year in window
+                if pd.notna(numerator.get(year)) and pd.notna(denominator.get(year))
+            ]
+            k = len(pairs)
+            if k < min_present:
+                points.append(
+                    MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k)
+                )
+                continue
+            den_total = float(sum(pair[1] for pair in pairs))
+            if den_total == 0:
+                points.append(
+                    MetricPoint(as_of, None, ReasonCode.ZERO_DENOMINATOR, k)
+                )
+            elif den_total < 0:
+                points.append(MetricPoint(as_of, None, ReasonCode.NEGATIVE_BASE, k))
+            else:
+                num_total = float(sum(pair[0] for pair in pairs))
+                points.append(MetricPoint(as_of, num_total / den_total, None, k))
+        return points
+
+    return _compute
+
+
+def slope_metric(series_fn: SeriesFn, n: int) -> ComputeFn:
+    """Ordinary-least-squares slope per year over the window's present years.
+
+    Pins the catalog's underspecified "trend of ..." to an exact rule. OLS
+    rather than last-minus-first because the latter is decided by two points and
+    inverts on a single outlier year. Units are "change in the ratio per year",
+    so a negative value means the series is falling.
+
+    Needs at least two DISTINCT years for the slope to exist; a window whose
+    present years collapse to one point yields `insufficient_history` rather
+    than a zero slope, which would read as "flat" rather than "unknown".
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        series = series_fn(frame)
+        if series.empty:
+            return []
+        years = list(series.index)
+        points: list[MetricPoint] = []
+        for as_of in range(years[0] + n - 1, years[-1] + 1):
+            present = _window_present(series, as_of, n)
+            k = len(present)
+            if k < _min_present(n) or present.index.nunique() < 2:
+                points.append(
+                    MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k)
+                )
+                continue
+            x = [float(year) for year in present.index]
+            y = [float(value) for value in present]
+            x_mean = sum(x) / len(x)
+            y_mean = sum(y) / len(y)
+            variance = sum((xi - x_mean) ** 2 for xi in x)
+            covariance = sum(
+                (xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y, strict=True)
+            )
+            points.append(MetricPoint(as_of, covariance / variance, None, k))
+        return points
+
+    return _compute
+
+
+def direction_correspondence_metric(
+    first_fn: SeriesFn, second_fn: SeriesFn, n: int
+) -> ComputeFn:
+    """Fraction of consecutive year-pairs where two series move the same way.
+
+    A pair counts only when both series are present at both of its years. A zero
+    change on EITHER side counts as NOT corresponding: a flat series has no
+    direction, and treating it as agreement would let a dormant balance-sheet
+    line read as tracking earnings.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        first = first_fn(frame)
+        second = second_fn(frame)
+        if first.empty or second.empty:
+            return []
+        years = sorted(set(first.index) | set(second.index))
+        points: list[MetricPoint] = []
+        for as_of in range(years[0] + n - 1, years[-1] + 1):
+            usable = [
+                year
+                for year in range(as_of - n + 1, as_of + 1)
+                if pd.notna(first.get(year)) and pd.notna(second.get(year))
+            ]
+            k = len(usable)
+            pairs = _consecutive_pairs(usable)
+            if k < _min_present(n) or not pairs:
+                points.append(
+                    MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k)
+                )
+                continue
+            corresponding = 0
+            for earlier, later in pairs:
+                delta_first = first[later] - first[earlier]
+                delta_second = second[later] - second[earlier]
+                if delta_first == 0 or delta_second == 0:
+                    continue
+                if (delta_first > 0) == (delta_second > 0):
+                    corresponding += 1
+            points.append(MetricPoint(as_of, corresponding / len(pairs), None, k))
+        return points
+
+    return _compute
+
+
+def negative_equity_with_strong_earnings_metric(
+    equity_fn: SeriesFn, earnings_fn: SeriesFn, n: int, *, min_profitable_years: int
+) -> ComputeFn:
+    """1.0 when equity is negative AND earnings were positive in enough years.
+
+    The book's durable-advantage special case: negative book equity created by
+    buybacks or dividends, alongside a long record of profits, is a strength
+    rather than distress. Both conditions must hold, so this is a conjunction
+    rather than two metrics -- reporting them separately would invite reading the
+    negative-equity leg alone as a negative signal.
+
+    Emits 0.0 (not a null) when the conditions simply do not hold: that is a
+    real answer. Nulls are reserved for a missing equity reading
+    (`missing_input`) or too little earnings history (`insufficient_history`).
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        equity = equity_fn(frame)
+        earnings = earnings_fn(frame)
+        if equity.empty or earnings.empty:
+            return []
+        years = sorted(set(equity.index) | set(earnings.index))
+        points: list[MetricPoint] = []
+        for as_of in range(years[0] + n - 1, years[-1] + 1):
+            present = _window_present(earnings, as_of, n)
+            k = len(present)
+            latest_equity = equity.get(as_of)
+            if latest_equity is None or pd.isna(latest_equity):
+                points.append(MetricPoint(as_of, None, ReasonCode.MISSING_INPUT, k))
+                continue
+            if k < _min_present(n):
+                points.append(
+                    MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k)
+                )
+                continue
+            profitable = int((present > 0).sum())
+            qualifies = latest_equity < 0 and profitable >= min_profitable_years
+            points.append(MetricPoint(as_of, 1.0 if qualifies else 0.0, None, k))
+        return points
+
+    return _compute
+
+
 def up_year_fraction_metric(series_fn: SeriesFn, n: int) -> ComputeFn:
     """Fraction of YoY increases among consecutive present years (spec 6.1.3)."""
 
@@ -230,12 +424,7 @@ def up_year_fraction_metric(series_fn: SeriesFn, n: int) -> ComputeFn:
             if k < _min_present(n):
                 points.append(MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k))
                 continue
-            present_years = list(present.index)
-            pairs = [
-                (present_years[i], present_years[i + 1])
-                for i in range(len(present_years) - 1)
-                if present_years[i + 1] == present_years[i] + 1
-            ]
+            pairs = _consecutive_pairs(list(present.index))
             if not pairs:
                 points.append(MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k))
             else:
