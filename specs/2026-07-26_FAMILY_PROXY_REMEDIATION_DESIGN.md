@@ -28,9 +28,23 @@ instead of being averaged away.
 *Blast radius.* 19 bank tickers and 17 insurance tickers are affected. All
 **88/88** SimFin-era bank quarters lose `saleq`. Non-financial SimFin-era
 `saleq` nulls are 11/2,832 — all pre-existing plausibility-gate nulls, not
-caused by this slice. `net_margin` gains `missing_input` for 11 banks and 2
-insurance tickers; the other 31 tickers with a missing SimFin-era `net_margin`
-were already missing one before this change.
+caused by this slice. `net_margin` gains `missing_input` for **11 bank tickers,
+and only those**. Of the 44 tickers with a missing SimFin-era `net_margin`, the
+other **33 pre-date this change**: 31 general-family, plus ELV and GL, which are
+insurance and therefore keep their `saleq` — their nulls are 2023Q1–Q3 only, the
+TTM warm-up window before four consecutive SimFin quarters exist, with non-null
+`saleq` and `niq` on every row. (An earlier draft of this block attributed those
+two to this slice. It could not have caused them, since insurance `saleq` is
+deliberately retained — corrected here per S4.7.)
+
+*Denominator note.* §2's general-family rates (`cheq` 0.690, `rectq` 0.563) come
+from the investigation, which inner-joined the staged frames to the raw
+Compustat files to test candidate columns. The audit compares staged-against-
+staged with no such join, so it reports 0.692 and 0.566 on 8 more rows —
+`cheq` n=1,326 against 1,318 and `rectq` n=1,218 against 1,210. The delta is
+exactly 8 on both fields, i.e. the same 8 tickers absent from the raw-file glob.
+This is join coverage, not drift, and is the same artifact recorded in the
+`oiadpq` spec §2.2.
 
 *Hard gate — no general-family value moved.* Structural: the changes touch only
 the `banks` and `insurance` branches, and the general branch assigns the same
@@ -213,6 +227,28 @@ different defect class and is not root-caused here.
    `oancfy`, `xrdq`). Not root-caused.
 2. **`saleq` insurance (0.627).** Concept matches (median 0.0046, ratio 0.999);
    a tail problem, deliberately not nulled.
+
+3. **Per-family rows are evidence, not a gate — and this is now the binding
+   limitation.** Only the pooled row carries a verdict; every per-family row is
+   written with `verdict = None` by design (`oiadpq` spec §3.4). So a family
+   sitting below its field's declared `min_agreement_rate` cannot raise a
+   contradiction as long as the pooled rate clears it. That is precisely the
+   masking mechanism §2 calls dangerous, and this slice only removes it for the
+   families whose data was deleted. It remains structurally live for at least:
+
+   | field | family | agreement | declared threshold | pooled verdict |
+   |---|---|---|---|---|
+   | `saleq` | insurance | 0.627 | 0.80 | `agree` (0.896) |
+   | `cshoq` | banks | 0.721 | 0.90 | CONTRADICTION |
+   | `cshoq` | insurance | 0.667 | 0.90 | CONTRADICTION |
+   | `dpq` | banks | 0.724 | 0.90 | CONTRADICTION |
+
+   For `cshoq`/`dpq` the pooled row already fails, so nothing is hidden. For
+   `saleq` insurance it is hidden: the field reads `agree` while a whole family
+   sits 0.17 below its threshold. Making per-family rows enforceable — or
+   declaring a per-family threshold — is the natural next hardening step, and
+   is deliberately out of scope here because it changes audit *policy*, not
+   just reporting.
 3. **Deliberate coverage loss on `cheq`.** The `chq` remap would recover
    insurance at 0.979 and banks at 0.650 but needs a family-aware legacy
    builder. Revisit if a ticker→family classification is ever published to
