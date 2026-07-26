@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from .source_families import POOLED_FAMILY, SourceFamily
 from .stage1_fundamentals_schema import STAGE1_KEY_COLUMNS, STAGE1_OUTPUT_COLUMNS
 
 DEFAULT_VALUE_TOLERANCE = 0.01
@@ -46,6 +47,29 @@ class EraSource:
 
 
 @dataclass(frozen=True)
+class FamilyAgreementThreshold:
+    """A per-family override of a field's `min_agreement_rate`.
+
+    SimFin publishes a separate statement set per business family, so one
+    canonical field can agree with the legacy era in one family and diverge in
+    another. A pooled rate averages those together: `saleq` measured 0.869
+    pooled -- clearing its declared 0.80 -- while every bank row disagreed at
+    0.000. Declaring the threshold per family is what lets the audit judge each
+    family on its own terms instead of on the corpus average.
+
+    `justification` is mandatory and must state measured evidence. It is
+    deliberately separate from the field-level `threshold_justification`: a
+    per-family relaxation must not inherit prose written about the pooled rate,
+    which is exactly how the refuted "median relative difference is exactly
+    0.0000" claim came to appear to cover the banks family (AGENTS.md S4.7).
+    """
+
+    family: SourceFamily
+    min_agreement_rate: float
+    justification: str
+
+
+@dataclass(frozen=True)
 class FieldEraSemantics:
     """Declared cross-era semantics for one canonical field.
 
@@ -53,6 +77,9 @@ class FieldEraSemantics:
     within it); `min_agreement_rate` is per-field (the fraction of rows that
     must agree). Keeping them distinct matters: conflating them was a defect
     in the first draft of the design spec.
+
+    `family_thresholds` optionally overrides `min_agreement_rate` for individual
+    SimFin statement families; see `min_agreement_rate_for`.
     """
 
     field: str
@@ -63,6 +90,20 @@ class FieldEraSemantics:
     value_tolerance: float = DEFAULT_VALUE_TOLERANCE
     min_agreement_rate: float = DEFAULT_MIN_AGREEMENT_RATE
     threshold_justification: str = ""
+    family_thresholds: tuple[FamilyAgreementThreshold, ...] = ()
+
+    def min_agreement_rate_for(self, source_family: str) -> float:
+        """Return the agreement threshold that applies to one family.
+
+        Resolves to the family's declared override when one exists, else to the
+        field-level `min_agreement_rate`. `POOLED_FAMILY` never carries an
+        override (`validate` rejects it), so the pooled row always resolves to
+        the field-level rate and its verdict is unaffected by any override.
+        """
+        for override in self.family_thresholds:
+            if str(override.family) == source_family:
+                return override.min_agreement_rate
+        return self.min_agreement_rate
 
     def validate(self) -> None:
         """Raise ValueError when the declaration is internally inconsistent."""
@@ -93,6 +134,43 @@ class FieldEraSemantics:
                 f"{self.field}: min_agreement_rate below "
                 f"{DEFAULT_MIN_AGREEMENT_RATE} requires a threshold_justification."
             )
+        self._validate_family_thresholds()
+
+    def _validate_family_thresholds(self) -> None:
+        """Reject per-family overrides that are unjustified or structurally inert.
+
+        Each rejection guards a way an override could read as a live guard while
+        being incapable of firing, or could relax a bound without evidence.
+        """
+        seen: set[str] = set()
+        for override in self.family_thresholds:
+            name = str(override.family)
+            if not self.eras_equivalent:
+                raise ValueError(
+                    f"{self.field}: family_thresholds on a non-equivalent field "
+                    "are inert -- the verdict is divergent_declared regardless "
+                    "of the agreement rate."
+                )
+            if name == POOLED_FAMILY:
+                raise ValueError(
+                    f"{self.field}: {POOLED_FAMILY!r} is the pooled aggregate; "
+                    "use min_agreement_rate to control it."
+                )
+            if name in seen:
+                raise ValueError(
+                    f"{self.field}: duplicate family threshold for {name!r}."
+                )
+            if not 0.0 < override.min_agreement_rate <= 1.0:
+                raise ValueError(
+                    f"{self.field}: family threshold for {name!r} is out of "
+                    "range; must be within (0, 1]."
+                )
+            if not override.justification:
+                raise ValueError(
+                    f"{self.field}: family threshold for {name!r} requires a "
+                    "justification stating the measured evidence."
+                )
+            seen.add(name)
 
 
 def _usd(
@@ -138,6 +216,59 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         simfin=_usd("Revenue", "total revenue", _FLOW),
         eras_equivalent=True,
         min_agreement_rate=0.80,
+        family_thresholds=(
+            FamilyAgreementThreshold(
+                family=SourceFamily.INSURANCE,
+                min_agreement_rate=0.50,
+                justification=(
+                    "Insurance measures 0.627 against the field-level 0.80. "
+                    "Investigated 2026-07-26 (spec "
+                    "2026-07-26_PER_FAMILY_AUDIT_VERDICTS_DESIGN section 3) and "
+                    "declared rather than nulled, because SimFin holds the "
+                    "AS-REPORTED figure here and Compustat does not. "
+                    "HAND-VERIFIED on AFL FY2023: SimFin Revenue sums to 18,700 "
+                    "against Aflac's published total revenues of $18.7B, while "
+                    "Compustat saleq sums to 17,729 -- 971 (5.2%) lower. The two "
+                    "providers agree EXACTLY on AFL net income quarter by "
+                    "quarter (1188/1634/1569/268, both summing to 4,659 against "
+                    "a published $4.66B), which isolates the divergence to the "
+                    "revenue line: a fiscal-calendar, unit or restatement cause "
+                    "would have moved net income too. "
+                    "NOT a tolerance problem, which is why value_tolerance is "
+                    "left at 1%: the distribution is not a smooth tail (median "
+                    "0.0046, p90 0.0257, p95 0.1336, max 0.3924) but 6 tickers "
+                    "agreeing exactly (TRV, WRB, HUM, CI, CINF, MET), 5 within "
+                    "2.6% (L, ACGL, CB, ERIE, HIG) and 2 genuinely divergent "
+                    "(AIG max 39.2%, AFL median 13.4% with 0/4 quarters within "
+                    "1%). Raising tolerance to 3% would clear a 0.90 rate while "
+                    "AIG and AFL kept publishing divergent revenue, and would "
+                    "assert agreement within 3% -- false for AFL. "
+                    "IRREDUCIBLE: SimFin's insurance income statement publishes "
+                    "a single Revenue column with no premiums / investment-income "
+                    "decomposition, and on the Compustat side AFL has saleq == "
+                    "revtq exactly with tiiq and finrevq null, so no candidate "
+                    "column exists on either side. Special items are rejected as "
+                    "the cause (spiq sums to 38 against a 971 gap). Quarterly "
+                    "gaps swing both directions (Q2 -1135, Q4 +679), which is "
+                    "CONSISTENT WITH but does not confirm realized investment "
+                    "gains/losses -- large for AFL and AIG relative to premiums, "
+                    "small for the six exact tickers. "
+                    "0.50 is the weakest statement that still does real work -- a "
+                    "majority of rows must agree exactly -- and keeps 0.13 "
+                    "headroom below the measured 0.627 so it is not fitted to "
+                    "it. It still fails a banks-style concept mismatch (0.000) "
+                    "and a material degradation on refresh. "
+                    "DISCLOSED CONSEQUENCE: net_margin for insurers with "
+                    "material realized investment gains carries a level shift "
+                    "across the 2022/2023 boundary (AFL 5.2% of revenue at the "
+                    "FY2023 annual grain, AIG 16.7%). Each era's value is "
+                    "internally consistent and defensible in its own era, but "
+                    "they are not the same quantity. revenue_cagr_* is already "
+                    "protected: windows.require_single_era nulls any multi-year "
+                    "window spanning the boundary as mixed_era_window."
+                ),
+            ),
+        ),
         threshold_justification=(
             "CORRECTED 2026-07-26: the claim below that 'the median relative "
             "difference is exactly 0.0000' is a POOLED figure, true for the "
@@ -148,10 +279,19 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
             "0.80 threshold as `agree` while every bank row disagreed. "
             "`saleq` is therefore nulled for the banks family from 2026-07-26 "
             "(spec 2026-07-26_FAMILY_PROXY_REMEDIATION_DESIGN). Insurance "
-            "(0.627, median 0.0046, ratio 0.999) is a tail problem, not a "
-            "concept mismatch, and remains mapped -- but note it sits below "
-            "this 0.80 threshold while the pooled rate clears it, and "
-            "per-family rows carry no verdict, so nothing raises. The "
+            "(0.627, median 0.0046, ratio 0.999) remains mapped. "
+            "SUPERSEDED 2026-07-26 on two counts by spec "
+            "2026-07-26_PER_FAMILY_AUDIT_VERDICTS_DESIGN. (1) The claim that "
+            "insurance 'sits below this 0.80 threshold while the pooled rate "
+            "clears it, and per-family rows carry no verdict, so nothing "
+            "raises' described the masking defect and is no longer true: "
+            "per-family rows now carry enforceable verdicts, and insurance "
+            "carries an explicit declared threshold of 0.50 -- see "
+            "family_thresholds above. (2) Calling insurance a 'tail problem' "
+            "was refuted by measurement: the distribution is 6 exact tickers, "
+            "5 within 2.6% and 2 genuinely divergent (AIG max 39.2%, AFL "
+            "median 13.4%), not a smooth tail, and SimFin rather than Compustat "
+            "holds the as-reported figure. The "
             "general-family median relative difference of 0.0000 below was "
             "re-confirmed per family; the `revtq` 84.7% vs `saleq` 83.5% "
             "comparison was a POOLED 2026-07-24 figure and has NOT been "
