@@ -163,3 +163,16 @@ def test_oiadpq_is_declared_non_equivalent_with_evidence():
     assert "0.474" in declaration.divergence_note, (
         "the note must record the candidate ceiling that rules out a remap"
     )
+
+
+def test_saleq_justification_does_not_make_the_refuted_pooled_claim():
+    """The 'median relative difference is exactly 0.0000' claim is pooled.
+
+    True for the general family, false for banks (0.5328). The per-family audit
+    refuted it, so the justification must carry the correction rather than
+    present the pooled figure as the whole picture (S4.7).
+    """
+    justification = semantics_for("saleq").threshold_justification
+    assert "CORRECTED 2026-07-26" in justification
+    assert "0.5328" in justification, "must record the measured banks median"
+    assert "nulled for the banks family" in justification
