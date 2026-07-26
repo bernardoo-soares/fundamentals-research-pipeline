@@ -32,6 +32,12 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Declarative config files are loaded at runtime (the scorecard ramps/weights,
+# the SEC metric mapping), so they must ship with the package rather than only
+# resolving under an editable install.
+[tool.setuptools.package-data]
+fundamentals_pipeline = ["**/*.yml"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
