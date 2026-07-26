@@ -139,6 +139,18 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         eras_equivalent=True,
         min_agreement_rate=0.80,
         threshold_justification=(
+            "CORRECTED 2026-07-26: the claim below that 'the median relative "
+            "difference is exactly 0.0000' is a POOLED figure, true for the "
+            "general family and FALSE for banks (median 0.5328, agreement "
+            "0.000, ratio 1.533). The per-family audit added 2026-07-25 "
+            "refuted it: SimFin's bank Revenue is a narrower construction no "
+            "Compustat column reproduces, and the pooled rate cleared this "
+            "0.80 threshold as `agree` while every bank row disagreed. "
+            "`saleq` is therefore nulled for the banks family from 2026-07-26 "
+            "(spec 2026-07-26_FAMILY_PROXY_REMEDIATION_DESIGN). Insurance "
+            "(0.627, median 0.0046, ratio 0.999) is a tail problem, not a "
+            "concept mismatch, and remains mapped. The general-family "
+            "reasoning below stands as originally measured.\n"
             "Investigated 2026-07-24. The concepts DO match -- the median "
             "relative difference is exactly 0.0000 and `revtq` scores the same "
             "as `saleq` (84.7% vs 83.5%), so this is not a definitional "

@@ -338,7 +338,6 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         }
     )
 
-    out["saleq"] = _numeric_series(frame, "Revenue")
     out["niq"] = _numeric_series(frame, "Net Income")
     # SimFin states tax as a negative expense; Compustat states it positive.
     out["txtq"] = _positive_expense(frame, "Income Tax (Expense) Benefit, Net")
@@ -355,7 +354,6 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["oancfq"] = _numeric_series(frame, "Net Cash from Operating Activities")
     out["prstkcq"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity")
     out["capxq"] = _positive_outflow(frame, "Change in Fixed Assets & Intangibles")
-    out["cheq"] = _numeric_series(frame, "Cash, Cash Equivalents & Short Term Investments")
     # dvpq is PREFERRED dividends by the Compustat definition. SimFin
     # publishes no preferred-dividend column, so this is null in the SimFin
     # era; total dividends are carried by `dvy` from the annual cashflow.
@@ -364,6 +362,11 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["cshoq"] = _numeric_series(frame, "Shares (Basic)")
 
     if family == "general":
+        out["saleq"] = _numeric_series(frame, "Revenue")
+        out["cheq"] = _numeric_series(
+            frame, "Cash, Cash Equivalents & Short Term Investments"
+        )
+        out["rectq"] = _numeric_series(frame, "Accounts & Notes Receivable")
         out["oiadpq"] = _numeric_series(frame, "Operating Income (Loss)")
         out["xintq"] = _numeric_series(frame, "Interest Expense, Net")
         out["actq"] = _numeric_series(frame, "Total Current Assets")
@@ -376,6 +379,22 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xrdq"] = _positive_expense(frame, "Research & Development")
         out["invtq"] = _numeric_series(frame, "Inventories")
     elif family == "banks":
+        # SimFin's bank Revenue is a narrower construction than Compustat's
+        # total revenue: measured FY2023 agreement 0.000 (median 53.3% off,
+        # ratio 1.533), and no Compustat column reproduces it (tiiq 0.087 is
+        # the best candidate). Nulled rather than published as a proxy, since
+        # saleq feeds net_margin and every revenue_cagr_*.
+        out["saleq"] = _empty_numeric_series(frame)
+        # SimFin's bank/insurance "Cash, Cash Equivalents & Short Term
+        # Investments" is cash ONLY -- their short-term investments sit in
+        # separate columns -- while Compustat cheq includes them. Measured
+        # FY2023 agreement 0.000. Compustat `chq` (cash only) would match
+        # (banks 0.650, insurance 0.979), but selecting it needs a
+        # family-aware legacy builder the legacy extract cannot support.
+        out["cheq"] = _empty_numeric_series(frame)
+        # No Compustat receivables column reconciles: rectq 0.000 (median
+        # 2.4485), rectrq 0.000, rectoq 0.000.
+        out["rectq"] = _empty_numeric_series(frame)
         # SimFin's bank operating income is Net Revenue after Provisions less
         # Total Non-Interest Expense -- not Compustat's Operating Income After
         # Depreciation. Measured FY2023 agreement 0.000 (median 89.9% off).
@@ -391,6 +410,17 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         out["xrdq"] = _empty_numeric_series(frame)
         out["invtq"] = _empty_numeric_series(frame)
     elif family == "insurance":
+        # saleq is NOT nulled here: measured FY2023 agreement 0.627 comes with
+        # median relative difference 0.0046 and ratio 0.999, so the concept
+        # matches and only a tail diverges -- a different defect class from the
+        # banks mismatch. Mapped, and the tail disclosed in the design spec.
+        out["saleq"] = _numeric_series(frame, "Revenue")
+        # Cash-only, as for banks. Measured FY2023 agreement 0.000 (median
+        # 1.0807); Compustat `chq` would match at 0.979.
+        out["cheq"] = _empty_numeric_series(frame)
+        # Measured FY2023 agreement 0.100 (median 0.6583); rectrq 0.182 and
+        # rectoq 0.000 do not close it.
+        out["rectq"] = _empty_numeric_series(frame)
         # Derived after Total Claims & Losses; not comparable to Compustat
         # oiadpq. Measured FY2023 agreement 0.098.
         out["oiadpq"] = _empty_numeric_series(frame)
@@ -413,7 +443,6 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["dvy"] = _positive_outflow(frame, "Dividends Paid__annual")
     out["cshopq"] = _empty_numeric_series(frame)
     out["ltq"] = _numeric_series(frame, "Total Liabilities")
-    out["rectq"] = _numeric_series(frame, "Accounts & Notes Receivable")
     out["dpq"] = _numeric_series(frame, SIMFIN_CASHFLOW_DA_COLUMN)
     out["source_family"] = family
     out["mapped_non_null_count"] = out[list(SIMFIN_FIELDS)].notna().sum(axis=1)

@@ -800,3 +800,66 @@ def test_oiadpq_is_mapped_for_the_general_family():
     )
     out = _build_family_canonical(frame, family="general")
     assert out["oiadpq"].iloc[0] == 40373.0
+
+
+def _financial_frame() -> pd.DataFrame:
+    """One row carrying every column the family-proxy fields read."""
+    return pd.DataFrame(
+        {
+            "ticker": ["BAC"],
+            "year": [2023],
+            "quarter": [1],
+            "Revenue": [25000.0],
+            "Cash, Cash Equivalents & Short Term Investments": [333000.0],
+            "Accounts & Notes Receivable": [55000.0],
+            "Net Income": [8200.0],
+        }
+    )
+
+
+def test_saleq_is_null_for_the_banks_family():
+    """SimFin's bank 'Revenue' is a narrower construction than Compustat saleq.
+
+    Measured FY2023: 0.000 agreement, median relative difference 0.5328, median
+    ratio 1.533, and no Compustat column reproduces it (tiiq 0.087 is the best).
+    Publishing one as the other is proxy substitution (AGENTS.md S4.2).
+
+    Insurance is deliberately NOT nulled: its 0.627 agreement comes with median
+    0.0046 and ratio 0.999, so the concept matches and only a tail diverges.
+    """
+    out = _build_family_canonical(_financial_frame(), family="banks")
+    assert out["saleq"].isna().all()
+
+    insurance = _build_family_canonical(_financial_frame(), family="insurance")
+    assert insurance["saleq"].iloc[0] == 25000.0
+
+
+def test_cheq_is_null_for_banks_and_insurance_families():
+    """SimFin's identically-named cash column is cash-only for financials.
+
+    Compustat cheq is Cash AND Short-Term Investments; for banks and insurance
+    SimFin's short-term investments sit in separate columns, so the two are
+    different quantities (measured 0.000 agreement for both families).
+    """
+    for family in ("banks", "insurance"):
+        out = _build_family_canonical(_financial_frame(), family=family)
+        assert out["cheq"].isna().all(), f"{family} must not publish cheq"
+
+
+def test_rectq_is_null_for_banks_and_insurance_families():
+    """No Compustat receivables column reconciles for the financial families.
+
+    Measured FY2023: banks 0.000 (median 2.4485), insurance 0.100 (median
+    0.6583); rectrq and rectoq do not close either.
+    """
+    for family in ("banks", "insurance"):
+        out = _build_family_canonical(_financial_frame(), family=family)
+        assert out["rectq"].isna().all(), f"{family} must not publish rectq"
+
+
+def test_general_family_keeps_saleq_cheq_and_rectq():
+    """Only the financial families change; general is 97% of the corpus."""
+    out = _build_family_canonical(_financial_frame(), family="general")
+    assert out["saleq"].iloc[0] == 25000.0
+    assert out["cheq"].iloc[0] == 333000.0
+    assert out["rectq"].iloc[0] == 55000.0
