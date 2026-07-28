@@ -198,6 +198,78 @@ Agreement at 1% improves 3.9× and the median step halves. A residual remains
 to SG&A rather than COGS, so the divergence is **substantially but not fully**
 explained.
 
+> **SUPERSEDED 2026-07-28 — see §2.2.1.** That last clause was a hypothesis,
+> never a measurement, and it turned out to be about a third of the story. It is
+> retained above as written so the record shows what was believed and when.
+
+### 2.2.1 The residual, root-caused (2026-07-28)
+
+Solve per company for the share of total D&A the **filer** placed inside cost of
+revenue:
+
+```
+a = (Cost of Revenue_simfin − cogsq_legacy) / dpq_legacy
+```
+
+Measured on FY2023, n=227 with `dpq ≥ 2%` of revenue so that `a` is well
+determined. **`a` is trimodal, not a constant:**
+
+| group | share | meaning |
+|---|---|---|
+| `a ≥ 0.95` | **34.4%** | filer folds all D&A into COGS |
+| `a ≤ 0.05` | **26.4%** | filer shows D&A entirely outside COGS |
+| between | **32.6%** | filer splits it |
+
+The poles are exact accounting identities, not estimates:
+
+| ticker | FY2023 | `a` | evidence |
+|---|---|---|---|
+| AAPL | 214,137 = 202,618 + 11,519 | **1.000** | 214,137 *is* Apple's published total cost of sales; gross margin 44.13% is the published figure |
+| KO, AMZN | — | **1.000** | exact |
+| DIS | 59,201 = 59,201, `dpq` 5,369 outside | **0.000** | both providers carry the same line; Disney labels it *"exclusive of depreciation and amortization"* |
+| CMCSA | 36,761 vs `cogsq` 83,922 | **−3.29** | SimFin holds Comcast's *"Programming and production"*; Compustat also absorbs *"Other operating and administrative"* |
+
+So **SimFin preserves each filer's presentation; Compustat normalises D&A out of
+every one.** `a` is a property of the filing and is **not recoverable from
+Compustat alone**. A third cause appears for filers with no gross-profit line
+(`a < 0`): the providers synthesise *different cost-of-revenue scopes*, and for
+those companies gross margin is not a published quantity at all.
+
+**What this costs the shipped formula.** `saleq − cogsq − dpq` assumes `a = 1`
+universally. Against the published (SimFin) gross margin:
+
+| group | n | median error | agreement@1% |
+|---|---|---|---|
+| `a ≥ 0.95` | 93 | **+0.0000** | 0.860 |
+| `0.05 < a < 0.95` | 74 | −0.0199 | 0.162 |
+| `a ≤ 0.05` | 60 | **−0.1346** | **0.000** |
+
+On the book's own **>40%** test the shipped formula flips the verdict for
+**11.8%** of companies overall and **33.3%** of the `a ≤ 0.05` group. The naive
+formula is no better overall (12.5%) — it is simply wrong on the opposite group.
+**Neither formula is universally correct**, because the truth is per-filer and
+the legacy provider does not carry it. The golden tests that validated the
+correction (KO, AAPL) are both `a = 1.000` companies, i.e. drawn from exactly
+the group where the formula is exact.
+
+### 2.2.2 The consequence: the family may be restricted to the wrong era
+
+The gross-profit family is currently **legacy-only**. But the measurement above
+says the published gross margin is computable *exactly* in the **SimFin** era —
+`(Revenue − Cost of Revenue)/Revenue` is the as-reported figure, correct for
+every filer regardless of `a` — and is **not** exactly computable in the legacy
+era for anyone whose `a ≠ 1`.
+
+SimFin-era coverage supports it: **FY2024 has `cogsq` on 336 of 389 tickers
+(86.4%)**, median gross margin 0.4732, 60.1% above the 40% line.
+
+That is the same 30%-weight `profitability_moat` component SP4 measured as empty
+at FY2024 (spec `2026-07-26_SP4_BUFFETT_SCORER_DESIGN` §1). **Not acted on here
+— reversing a shipped era restriction changes published numbers and is its own
+slice**, with an open question this measurement does not settle: whether a
+synthesised gross margin should be published at all for the `a < 0` filers who
+report no gross-profit line.
+
 ### 2.3 The corrected formula, validated three ways on KO FY2021
 
 ```

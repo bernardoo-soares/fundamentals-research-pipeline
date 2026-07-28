@@ -401,8 +401,42 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
             "arithmetic to saleq - cogsq - dpq raises cross-era gross-margin "
             "agreement from 0.100 to 0.386 at 1% tolerance and halves the "
             "median step (0.0350 to 0.0138), so the D&A treatment is the "
-            "SUBSTANTIAL but not the ONLY cause; the residual is consistent "
-            "with dpq including D&A allocated to SG&A. Every shipped "
+            "SUBSTANTIAL but not the ONLY cause. "
+            "RESIDUAL ROOT-CAUSED 2026-07-28. The earlier guess -- 'consistent "
+            "with dpq including D&A allocated to SG&A' -- was never measured "
+            "and is only a third of the story. Solving per company for "
+            "a = (Cost of Revenue_simfin - cogsq_legacy) / dpq_legacy gives the "
+            "share of total D&A that the FILER put inside cost of revenue. "
+            "Measured on FY2023 (n=227 with dpq >= 2% of revenue, so a is well "
+            "determined), a is TRIMODAL, not a constant: 34.4% of companies at "
+            "a >= 0.95, 26.4% at a <= 0.05, 32.6% strictly between. The exact "
+            "poles are accounting identities, not estimates -- AAPL FY2023 "
+            "a = 1.000 (SimFin 214,137 = cogsq 202,618 + dpq 11,519, and "
+            "214,137 IS Apple's published total cost of sales, giving the "
+            "published 44.13% gross margin), KO and AMZN also exactly 1.000, "
+            "while DIS FY2023 a = 0.000 (SimFin 59,201 = cogsq 59,201 to the "
+            "dollar, with dpq 5,369 outside it -- Disney's income statement "
+            "labels that line 'exclusive of depreciation and amortization'). "
+            "So SimFin preserves each filer's presentation while Compustat "
+            "normalises D&A out of every one. `a` is a property of the filing "
+            "and is NOT recoverable from Compustat alone. "
+            "A THIRD cause exists for filers with no gross-profit line at all: "
+            "the providers synthesise DIFFERENT cost-of-revenue scopes, giving "
+            "a < 0. CMCSA FY2023 a = -3.29 (SimFin 36,761 = Comcast's "
+            "'Programming and production' line; Compustat cogsq 83,922 also "
+            "absorbs 'Other operating and administrative'). For these companies "
+            "gross margin is not a published quantity and neither provider's "
+            "figure is wrong -- the concept does not apply. "
+            "CONSEQUENCE FOR THE SHIPPED FORMULA: saleq - cogsq - dpq assumes "
+            "a = 1 for every company. Against the published (SimFin) gross "
+            "margin it is exact where it applies (a >= 0.95: n=93, median error "
+            "+0.0000, agreement 0.860) but understates by a median 13.46pp "
+            "where it does not (a <= 0.05: n=60, agreement 0.000). On the "
+            "book's own >40% test it flips the verdict for 11.8% of companies "
+            "overall and for 33.3% of the a <= 0.05 group. The naive formula is "
+            "no better overall (12.5%) -- it is simply wrong on the opposite "
+            "group. Neither formula is universally correct because the truth is "
+            "per-filer and the legacy provider does not carry it. Every shipped "
             "gross-profit metric therefore uses the corrected arithmetic and is "
             "restricted to the legacy era, since the correct formula differs by "
             "era (S4.3). "
@@ -414,12 +448,40 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
             "across the 2022/2023 boundary."
         ),
     ),
-    _equivalent_usd(
-        "xsgaq",
-        "xsgaq",
-        "Selling, General & Administrative",
-        "SG&A expense",
-        _FLOW,
+    FieldEraSemantics(
+        field="xsgaq",
+        legacy=_usd("xsgaq", "Selling, General & Administrative", _FLOW),
+        simfin=_usd("Selling, General & Administrative", "SG&A expense", _FLOW),
+        eras_equivalent=False,
+        divergence_note=(
+            "ROOT CAUSE FOUND 2026-07-28: Compustat's xsgaq ABSORBS R&D; "
+            "SimFin's SG&A excludes it and reports R&D on its own line. This is "
+            "forced by Compustat's own structure -- the identity "
+            "xoprq = cogsq + xsgaq holds at 99.69%, so xsgaq must carry ALL "
+            "non-COGS operating expense, R&D included. The two fields are "
+            "therefore different quantities, not a noisy measurement of one. "
+            "Measured on the FY2023 overlap at the audit's own grain and 1% "
+            "tolerance, splitting the corpus by whether SimFin reports an R&D "
+            "line: R&D reporters agree 0.015 (median rel diff 0.4914) against "
+            "SimFin xsgaq alone, but 0.539 (median rel diff 0.0079) against "
+            "SimFin xsgaq + xrdq -- which is statistically indistinguishable "
+            "from the CONTROL group of companies with no R&D line at all "
+            "(0.510, median rel diff 0.0080). A treated group landing exactly "
+            "on its control is the signature of a fully-explained cause. "
+            "Pooled, the remap lifts agreement 0.288 -> 0.523 and cuts the "
+            "median relative difference 0.1273 -> 0.0080, a 16x reduction. "
+            "The residual to 0.523 is NOT an R&D effect: the control group sits "
+            "at the same 0.510, so what remains is the baseline that affects "
+            "every SG&A comparison equally (quarterly fiscal-calendar "
+            "alignment, already noted for this field). "
+            "This confirms from the data what was previously only asserted -- "
+            "that xsgaq is a SEPARATE cause-class from cogsq (Spearman 0.210). "
+            "It is: cogsq diverges on D&A allocation, xsgaq on R&D inclusion. "
+            "CONSEQUENCE: sga_pct_gross_profit is already legacy-only, so no "
+            "shipped value changes. Any future cross-era use of xsgaq must "
+            "compare legacy xsgaq against SimFin xsgaq + xrdq, never against "
+            "SimFin xsgaq alone."
+        ),
     ),
     _equivalent_usd(
         "xrdq", "xrdq", "Research & Development", "R&D expense", _FLOW
