@@ -27,7 +27,7 @@ def test_registry_has_every_declared_quarterly_metric() -> None:
         "lt_debt_payback_years",
         "interest_pct_operating_income",
         "treasury_stock_present",
-        # gross-profit family (SP3 completion); all legacy-era only
+        # gross-profit family; era-dispatched arithmetic, both eras
         "gross_margin",
         "sga_pct_gross_profit",
         "rd_pct_gross_profit",
@@ -174,12 +174,13 @@ def test_interest_pct_is_restricted_to_the_legacy_era():
 # Every metric whose computation is era-specific, and why. A metric absent from
 # this set must apply in both eras; adding one here is a deliberate act that
 # costs SimFin-era coverage, so the set is asserted exhaustively.
+# The gross-profit family left this set on 2026-07-28: its arithmetic is
+# era-DISPATCHED rather than era-restricted, so both eras compute (the legacy
+# one flagged `da_allocation_assumed`). `interest_pct` stays: no remapping of
+# either leg rose above 0.474 agreement, so there is no SimFin arithmetic to
+# dispatch to.
 _LEGACY_RESTRICTED = {
     "interest_pct_operating_income",  # both legs diverge across the boundary
-    "gross_margin",  # gross-profit arithmetic is era-specific (dpq)
-    "sga_pct_gross_profit",
-    "rd_pct_gross_profit",
-    "dep_pct_gross_profit",
 }
 
 
@@ -332,23 +333,58 @@ def test_golden_sga_pct_gross_profit_ko_fy2021() -> None:
     "metric_id",
     ["gross_margin", "sga_pct_gross_profit", "rd_pct_gross_profit", "dep_pct_gross_profit"],
 )
-def test_gross_profit_family_is_legacy_era_only(metric_id: str) -> None:
-    """The arithmetic is era-specific, so a SimFin row must be nulled, not computed.
+def test_gross_profit_family_computes_in_both_eras(metric_id: str) -> None:
+    """SimFin rows are COMPUTED, not nulled -- reversed 2026-07-28.
 
-    SimFin's Cost of Revenue already includes D&A, so subtracting dpq again
-    would double-count it. era_not_supported, never a false value.
+    The family used to be legacy-only on the belief that "SimFin's Cost of
+    Revenue already includes D&A". Measured: that holds for only 34.4% of
+    filers. SimFin preserves each filer's own presentation, so
+    `Revenue - Cost of Revenue` is the as-reported gross profit for ALL of them
+    and needs no depreciation term. `dpq` is deliberately absent from this frame
+    to prove the SimFin path does not require it.
 
-    `xrdq` is supplied here (KO reports none) so that every metric in the family
-    would otherwise produce a value -- otherwise `rd_pct_gross_profit` would
-    null as `missing_input` and this test would pass without exercising the
-    restriction at all.
+    `xrdq` is supplied here (KO reports none) so every metric in the family can
+    produce a value.
     """
     frame = _ko_frame(era="simfin")
     frame["xrdq"] = 100.0
-    assert METRICS[metric_id].supported_eras == frozenset({SourceEra.LEGACY})
+    assert METRICS[metric_id].supported_eras is None
     p = _restricted_value_at(metric_id, frame, 2021, 4)
-    assert p.value is None
-    assert p.reason_code == ReasonCode.ERA_NOT_SUPPORTED
+    assert p.value is not None, p.reason_code
+    assert p.reason_code is None
+    # As-reported arithmetic carries no assumption, so no caveat.
+    assert p.quality_flag is None
+
+
+def test_simfin_gross_profit_does_not_require_depreciation() -> None:
+    """The SimFin denominator needs no `dpq`, unlike the legacy one.
+
+    Proves the era dispatch really happened rather than the legacy branch
+    quietly succeeding: with `dpq` absent the legacy arithmetic cannot produce
+    a gross profit at all, so a value here can only have come from
+    `saleq - cogsq`.
+
+    `dep_pct_gross_profit` is excluded because `dpq` is its NUMERATOR -- it
+    needs the field regardless of which era supplies the denominator.
+    """
+    frame = _ko_frame(era="simfin")
+    frame["dpq"] = None
+    point = _restricted_value_at("gross_margin", frame, 2021, 4)
+    assert point.value is not None, point.reason_code
+    assert point.quality_flag is None
+
+
+def test_legacy_gross_profit_is_flagged_as_assuming_the_da_split() -> None:
+    """Every legacy gross-profit row must carry the caveat to the UI.
+
+    Compustat normalises the filer's own D&A allocation away, so `a = 1` is
+    assumed -- exact for 34.4% of filers, understating by a median 13.46pp for
+    the 26.4% who present D&A outside cost of revenue. The value is real, so it
+    is a quality flag rather than a reason code, but it must never be silent.
+    """
+    point = _restricted_value_at("gross_margin", _ko_frame(era="legacy"), 2021, 4)
+    assert point.value is not None
+    assert point.quality_flag == ReasonCode.DA_ALLOCATION_ASSUMED
 
 
 @pytest.mark.parametrize(
@@ -384,3 +420,51 @@ def test_negative_gross_profit_is_reasoned_null() -> None:
     p = _restricted_value_at("sga_pct_gross_profit", frame, 2021, 4)
     assert p.value is None
     assert p.reason_code == ReasonCode.NEGATIVE_BASE
+
+
+# --- SimFin-era gross-margin golden: Apple FY2023, from the 10-K ------------
+# Total net sales 383,285 and total cost of sales 214,137 give the published
+# gross margin of 169,148 / 383,285 = 44.13%. SimFin's Cost of Revenue IS that
+# 214,137, which is the whole reason the SimFin era needs no depreciation term.
+_AAPL_FY2023_COST_OF_SALES = [66822.0, 52860.0, 45384.0, 49071.0]
+_AAPL_FY2023_REVENUE = [117154.0, 94836.0, 81797.0, 89498.0]
+
+
+def _aapl_gross_profit_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "ticker": "AAPL",
+                "year": 2023,
+                "quarter": quarter,
+                "saleq": revenue,
+                "cogsq": cost,
+                # Present but irrelevant: the SimFin arithmetic must not touch
+                # it. If it did, gross margin would come out 41.13%, not the published 44.13%.
+                "dpq": 2879.75,
+                "xsgaq": None,
+                "xrdq": None,
+                "source_era": "simfin",
+            }
+            for quarter, (revenue, cost) in enumerate(
+                zip(_AAPL_FY2023_REVENUE, _AAPL_FY2023_COST_OF_SALES, strict=True),
+                start=1,
+            )
+        ]
+    )
+
+
+def test_golden_gross_margin_aapl_fy2023_simfin_era() -> None:
+    """The published figure, not a derived one (S4.4).
+
+    383,285 - 214,137 = 169,148, and 169,148 / 383,285 = 0.441261 -- Apple's
+    reported FY2023 gross margin of 44.13%. Subtracting `dpq` as the legacy
+    arithmetic does would give 0.411258, understating it by 3.01pp.
+    """
+    point = _value_at("gross_margin", _aapl_gross_profit_frame(), 2023, 4)
+    assert sum(_AAPL_FY2023_REVENUE) == 383285.0
+    assert sum(_AAPL_FY2023_COST_OF_SALES) == 214137.0
+    assert point.value == pytest.approx(169148.0 / 383285.0)
+    assert point.value == pytest.approx(0.441311, abs=1e-6)
+    assert point.quality_flag is None
+    assert point.source_era == "simfin"

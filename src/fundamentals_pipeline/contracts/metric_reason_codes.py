@@ -20,6 +20,13 @@ class ReasonCode:
     TSTK_UNAVAILABLE = "tstk_unavailable"
     MIXED_ERA_WINDOW = "mixed_era_window"
     ERA_NOT_SUPPORTED = "era_not_supported"
+    # Legacy-era gross profit assumes the filer placed ALL depreciation inside
+    # cost of revenue. Measured 2026-07-28: true for ~34% of filers, while ~26%
+    # present D&A outside it and are understated by a median 13.46pp. Compustat
+    # normalises the distinction away, so it is unrecoverable in that era -- the
+    # value is real but carries a known one-directional bias, which is a quality
+    # flag rather than a reason code.
+    DA_ALLOCATION_ASSUMED = "da_allocation_assumed"
 
 
 REASON_CODES: frozenset[str] = frozenset(
@@ -33,6 +40,7 @@ REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.TSTK_UNAVAILABLE,
         ReasonCode.MIXED_ERA_WINDOW,
         ReasonCode.ERA_NOT_SUPPORTED,
+        ReasonCode.DA_ALLOCATION_ASSUMED,
     }
 )
 
@@ -49,3 +57,12 @@ def validate_value_xor_reason(
         raise ValueError("Exactly one of value / reason_code must be set.")
     if reason_code is not None and reason_code not in REASON_CODES:
         raise ValueError(f"Unknown reason_code: {reason_code!r}")
+
+
+# Reason codes that mean "this measurement does not exist in this provider era",
+# as opposed to "this company is missing data". The distinction matters at the
+# score grain: an era-guarded criterion is absent for EVERY company in the era,
+# so counting it as a per-company gap blames the company for a provider gap.
+ERA_STRUCTURAL_REASON_CODES: frozenset[str] = frozenset(
+    {ReasonCode.ERA_NOT_SUPPORTED, ReasonCode.MIXED_ERA_WINDOW}
+)

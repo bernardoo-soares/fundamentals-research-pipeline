@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from ..contracts.era_resolution import SourceEra
 from ..contracts.field_era_semantics import semantics_for
 from ..contracts.metric_reason_codes import ReasonCode
 from ..contracts.metrics_quarterly_schema import QuarterPoint
@@ -312,30 +313,79 @@ def apply_era_restriction(
     return restricted
 
 
-def ttm_gross_profit(prepared: pd.DataFrame) -> dict[int, TtmResult]:
-    """TTM gross profit: `saleq_ttm - cogsq_ttm - dpq_ttm` (legacy-era arithmetic).
+def ttm_window_era(prepared: pd.DataFrame, as_of: int) -> str | None:
+    """The single `source_era` covering a four-quarter window, else None.
 
-    Applies the shared rule in `metrics/gross_profit.py`, which carries the
-    evidence for subtracting depreciation and the disclosed conservative bias.
+    None means the window is not provably one era -- it spans the provider
+    boundary or some quarter's provenance is unknown. Refusing rather than
+    assuming purity is the same policy `ttm_flow` applies (S4.2).
+    """
+    era_by_index = dict(
+        zip(prepared[QUARTER_INDEX_COLUMN], prepared[SOURCE_ERA_COLUMN], strict=True)
+    )
+    eras = {
+        _era_of(era_by_index.get(as_of - offset))
+        for offset in range(TTM_QUARTERS - 1, -1, -1)
+    }
+    if len(eras) != 1:
+        return None
+    return eras.pop()
 
-    Mixed when any leg is mixed: `cogsq` is declared `eras_equivalent=False`, so
-    a four-quarter window spanning the provider boundary is impure. A quarter
-    missing any leg yields no entry, which the callers map to `missing_input`.
+
+@dataclass(frozen=True)
+class GrossProfitResult:
+    """TTM gross profit plus the reliability caveat its era's arithmetic carries."""
+
+    total: float
+    mixed_non_equivalent: bool
+    quality_flag: str | None
+
+
+def ttm_gross_profit(prepared: pd.DataFrame) -> dict[int, GrossProfitResult]:
+    """TTM gross profit, using each era's own arithmetic.
+
+    The concept is single -- *published* gross profit -- but the two providers
+    store different quantities, so the arithmetic must differ (see
+    `metrics/gross_profit.py` for the measured evidence):
+
+    - **legacy**: `saleq - cogsq - dpq`. Compustat normalises D&A out of every
+      `cogsq`, so the filer's own allocation is unrecoverable and `a = 1` is
+      assumed. Real but biased, hence `da_allocation_assumed` on every row.
+    - **simfin**: `saleq - cogsq`. SimFin's Cost of Revenue *is* the as-reported
+      line, exact for every filer, so `dpq` is neither needed nor subtracted --
+      subtracting it would double-count for the filers who already included it.
+
+    A window that is not provably one era yields a mixed result, which callers
+    map to `mixed_era_window`; a quarter missing a required leg yields no entry,
+    which they map to `missing_input`.
     """
     revenue = ttm_flow(prepared, gp.REVENUE_FIELD)
     cost = ttm_flow(prepared, gp.COST_FIELD)
     depreciation = ttm_flow(prepared, gp.DEPRECIATION_FIELD)
-    out: dict[int, TtmResult] = {}
+    out: dict[int, GrossProfitResult] = {}
     for as_of, sales in revenue.items():
         cogs = cost.get(as_of)
-        dep = depreciation.get(as_of)
-        if cogs is None or dep is None:
+        if cogs is None:
             continue
-        out[as_of] = TtmResult(
+        era = ttm_window_era(prepared, as_of)
+        mixed = sales.mixed_non_equivalent or cogs.mixed_non_equivalent
+
+        if era == SourceEra.SIMFIN:
+            out[as_of] = GrossProfitResult(
+                gp.as_reported_gross_profit(sales.total, cogs.total), mixed, None
+            )
+            continue
+
+        # Legacy, or an era we cannot prove. The depreciation leg is required
+        # here and its own mixed flag folded in; an unprovable era is already
+        # mixed, so it is nulled downstream regardless of which branch built it.
+        dep = depreciation.get(as_of)
+        if dep is None:
+            continue
+        out[as_of] = GrossProfitResult(
             gp.gross_profit(sales.total, cogs.total, dep.total),
-            sales.mixed_non_equivalent
-            or cogs.mixed_non_equivalent
-            or dep.mixed_non_equivalent,
+            mixed or dep.mixed_non_equivalent,
+            ReasonCode.DA_ALLOCATION_ASSUMED,
         )
     return out
 
@@ -358,7 +408,7 @@ def gross_margin_metric() -> ComputeFn:
             reason = _denominator_reason(sales.total)
             if reason is not None:
                 return None, reason, None
-            return gross.total / sales.total, None, None
+            return gross.total / sales.total, None, gross.quality_flag
 
         return _points_over_frame(prepared, value_for)
 
@@ -388,7 +438,7 @@ def ttm_over_gross_profit(field: str) -> ComputeFn:
             reason = _denominator_reason(gross.total)
             if reason is not None:
                 return None, reason, None
-            return num.total / gross.total, None, None
+            return num.total / gross.total, None, gross.quality_flag
 
         return _points_over_frame(prepared, value_for)
 

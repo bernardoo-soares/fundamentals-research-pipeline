@@ -32,19 +32,52 @@ Coca-Cola's published figure, where the uncorrected form gives 24,750.
 
 ERA SPECIFICITY
 ---------------
-This arithmetic is LEGACY-ONLY. SimFin's `Cost of Revenue` already includes D&A,
-so subtracting `dpq` again would double-count it. Every metric built on gross
-profit therefore restricts itself to the legacy era: the issue is not merely that
-the two eras disagree but that the correct arithmetic differs between them, and
-one formula spanning both would mix two definitions in one field (S4.3).
+The arithmetic differs by era, so each era uses its own:
 
-KNOWN BIAS (conservative, disclosed)
-------------------------------------
-`dpq` is total D&A, including the portion belonging to SG&A rather than cost of
-goods, so subtracting all of it slightly over-subtracts: gross profit is
-understated by a measured 0.14-0.44pp of revenue (exact for AAPL and KO). The
-bias understates margin, so it cannot manufacture a false ">40%" pass, and it is
-10-30x smaller than the 4.09pp error it replaces.
+  legacy  saleq - cogsq - dpq     `gross_profit`
+  simfin  saleq - cogsq           `as_reported_gross_profit`
+
+The CONCEPT is single -- published gross profit -- and only the arithmetic
+differs, because the two providers store different quantities. That is what the
+era-semantics layer exists to express, and it is not one field meaning two things
+(S4.3): a TTM window spanning the boundary is nulled `mixed_era_window` by
+per-field purity, so no single value is ever assembled from both.
+
+KNOWN BIAS IN THE LEGACY ARITHMETIC (measured 2026-07-28, flagged on every row)
+------------------------------------------------------------------------------
+An earlier version of this module claimed SimFin's `Cost of Revenue` "already
+includes D&A" and that the legacy bias was 0.14-0.44pp of revenue. BOTH claims
+were wrong, and are corrected here.
+
+Solving per company for `a = (CostOfRevenue_simfin - cogsq_legacy) / dpq_legacy`
+-- the share of total D&A the FILER placed inside cost of revenue -- gives a
+TRIMODAL distribution on FY2023 (n=227 with dpq >= 2% of revenue):
+
+  a >= 0.95   34.4%   filer folds all D&A into COGS
+  a <= 0.05   26.4%   filer presents D&A entirely outside COGS
+  between     32.6%   filer splits it
+
+The poles are exact identities, not estimates. AAPL FY2023 a = 1.000 (SimFin
+214,137 = cogsq 202,618 + dpq 11,519, and 214,137 IS Apple's published total cost
+of sales). DIS FY2023 a = 0.000 (SimFin 59,201 = cogsq 59,201 to the dollar, with
+dpq 5,369 outside it -- Disney labels that line "exclusive of depreciation and
+amortization").
+
+So SimFin PRESERVES each filer's presentation while Compustat NORMALISES D&A out
+of every one. `a` is a property of the filing and is not recoverable from
+Compustat alone, so the legacy arithmetic must assume a = 1. Against the
+published figure that is exact where it holds (a >= 0.95: median error +0.0000)
+but understates by a median 13.46pp where it does not (a <= 0.05), flipping the
+book's >40% verdict for 11.8% of companies overall and 33.3% of that group. The
+bias is one-directional -- it can only understate margin, never manufacture a
+false ">40%" pass -- but it is far larger than previously believed, so every
+legacy gross-profit row carries the `da_allocation_assumed` quality flag.
+
+The SimFin arithmetic needs no such caveat: `Revenue - Cost of Revenue` is the
+as-reported gross profit for every filer regardless of `a`.
+
+Full evidence: spec 2026-07-26_SP3_METRIC_CATALOG_COMPLETION_DESIGN section 2.2.1
+and 2026-07-28_GROSS_PROFIT_ERA_AND_RELIABILITY_FLAGS_DESIGN.
 """
 
 from __future__ import annotations
@@ -74,6 +107,17 @@ def gross_profit(revenue: Term, cost: Term, depreciation: Term) -> Term:
     denominator).
     """
     return revenue - cost - depreciation
+
+
+def as_reported_gross_profit(revenue: Term, cost: Term) -> Term:
+    """Gross profit = revenue - cost, for a provider that stores the filed line.
+
+    The SimFin-era form. No depreciation term: SimFin's `Cost of Revenue` is the
+    filer's own line, already carrying whatever D&A that filer put there, so
+    subtracting `dpq` would double-count it for the ~34% who included all of it
+    and invent a cost for the ~26% who included none.
+    """
+    return revenue - cost
 
 
 def annual_field(field: str) -> str:

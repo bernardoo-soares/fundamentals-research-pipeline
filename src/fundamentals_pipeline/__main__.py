@@ -14,6 +14,7 @@ from .core.logging import configure_logging, get_logger
 from .core.settings import get_settings
 from .metrics.builder import build_metrics_trend
 from .metrics.quarterly_builder import build_metrics_quarterly
+from .scoring.builder import build_scores
 from .steps.cross_era_semantic_audit import run_cross_era_audit_from_dirs
 from .steps.legacy_processed_fundamentals_builder import (
     build_legacy_fundamentals,
@@ -251,6 +252,20 @@ def _build_parser() -> argparse.ArgumentParser:
     metrics_quarterly_parser.add_argument(
         "--warehouse-path",
         default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+    )
+
+    scores_parser = subparsers.add_parser(
+        "scores-build",
+        help="Score every ticker-year into scores/score_components/score_criteria.",
+    )
+    scores_parser.add_argument(
+        "--warehouse-path",
+        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+    )
+    scores_parser.add_argument(
+        "--config-path",
+        default=None,
+        help="Scorecard YAML; defaults to the packaged buffett_scorecard.yml.",
     )
 
     extension_audit_parser = subparsers.add_parser(
@@ -749,6 +764,20 @@ def main() -> None:
         print(f"metrics_quarterly_rows={result['metrics_quarterly_rows']}")
         print(f"metric_count={result['metric_count']}")
         print(f"reason_code_counts={result['reason_code_counts']}")
+        return
+
+    if args.command == "scores-build":
+        LOG.info(
+            "Running scores build: warehouse_path=%s config_path=%s",
+            args.warehouse_path,
+            args.config_path,
+        )
+        result = build_scores(
+            warehouse_path=args.warehouse_path, config_path=args.config_path
+        )
+        LOG.info("Scores build completed: %s", result)
+        for key, value in result.items():
+            print(f"{key}={value}")
         return
 
     parser.error(f"Unknown command: {args.command}")

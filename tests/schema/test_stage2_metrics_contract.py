@@ -26,6 +26,9 @@ def test_reason_codes_closed_set() -> None:
         "not_applicable_sector",
         "insufficient_history",
         "tstk_unavailable",
+        # legacy gross profit assumes the filer put ALL D&A inside cost of
+        # revenue; Compustat normalises the real split away (measured 2026-07-28)
+        "da_allocation_assumed",
         # window spans more than one provider era, so the inputs at the two
         # ends are not the same quantity (see field_era_semantics.py)
         "mixed_era_window",

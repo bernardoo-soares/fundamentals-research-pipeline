@@ -1,0 +1,172 @@
+# BuffettHeuristicScorer v1 configuration.
+#
+# Every weight, ramp anchor, checklist threshold and policy value lives here and
+# nowhere else (AGENTS.md S1.3: a tunable value is data, not code). Changing one
+# must never require editing a function. The file is hash-pinned: `config_hash`
+# is stored on every score row, so an edit is visible in the data rather than
+# silently rewriting history.
+#
+# RAMPS. Each is a list of [metric_value, points] anchors, linearly interpolated
+# between and clamped outside the ends. `x` must be strictly increasing; points
+# may ascend (higher is better) or descend (lower is better), so one evaluator
+# serves both directions and no metric needs an `invert` flag.
+#
+# CHECKLIST. The book's literal rule, evaluated in parallel with the ramp:
+# `op` in (">", ">=", "<", "<=") against `threshold`, yielding pass/fail. The
+# graded score ranks; the checklist grounds (spec 7.3).
+#
+# CRITERION WEIGHTS. Even within each component, deliberately. The book ranks
+# these criteria qualitatively but supplies nothing to justify a finer split,
+# and inventing one would be false precision dressed as rigour. Revisit only
+# with evidence.
+
+scorer_name: buffett_heuristic
+scorer_version: "1"
+
+policy:
+  # A component needs a majority of its criteria present to be scored at all.
+  # Below this it is excluded exactly like a zero-coverage component and the
+  # top-level weights renormalize.
+  #
+  # Measured 2026-07-26 (spec 2026-07-26_SP4_BUFFETT_SCORER_DESIGN section 1):
+  # at FY2024 profitability_moat has 1 of 6 criteria populated (0.167) because
+  # the gross-profit family is legacy-era restricted, while the next-lowest
+  # component sits at 0.75. Without this floor a 30%-weight component would
+  # rest entirely on one criterion carrying six times its designed share.
+  # 0.50 has 0.25 of headroom on either side of that gap and is not fitted to it.
+  min_component_coverage: 0.50
+  # coverage_ratio below this earns the low_confidence badge (spec 7.4.2).
+  low_confidence_coverage: 0.60
+  # staleness above this earns the stale_data badge.
+  max_staleness_quarters: 4
+  # Points awarded to the ROE criterion when negative_equity_strong_earnings
+  # fires (spec 7.4.3): negative book equity alongside a durable profit record
+  # is the book's special case, not a defect, so it takes full points rather
+  # than the garbage/null ROE it replaces.
+  negative_equity_override_points: 100.0
+  negative_equity_annotation: >-
+    negative equity with durable earnings - book special case
+
+components:
+
+  - id: profitability_moat
+    weight: 0.30
+    criteria:
+      - id: gross_margin
+        metric_id: gross_margin
+        ramp: [[0.20, 0], [0.40, 80], [0.60, 100]]
+        checklist: {op: ">", threshold: 0.40}
+      - id: gross_margin_consistency
+        metric_id: gross_margin_ge40_years_10y
+        ramp: [[0.0, 0], [1.0, 100]]
+        checklist: {op: ">=", threshold: 0.80}
+      - id: net_margin_consistency
+        metric_id: net_margin_ge20_years_10y
+        ramp: [[0.0, 0], [1.0, 100]]
+        checklist: {op: ">=", threshold: 0.80}
+      # Mary Buffett: SG&A under 30% of gross profit is excellent, 30-80%
+      # competitive, above 80% a fiercely competitive industry.
+      - id: sga_discipline
+        metric_id: sga_pct_gross_profit
+        ramp: [[0.30, 100], [0.80, 20], [1.20, 0]]
+        checklist: {op: "<", threshold: 0.30}
+      # Heavy R&D means the moat depends on continuous reinvention. Null is
+      # n.a., never penalised and never rewarded (spec 6.3.2): a missing xrdq
+      # cannot be distinguished from "no R&D programme".
+      - id: rd_discipline
+        metric_id: rd_pct_gross_profit
+        ramp: [[0.0, 100], [0.30, 30], [0.50, 0]]
+        checklist: {op: "<", threshold: 0.30}
+      - id: depreciation_discipline
+        metric_id: dep_pct_gross_profit
+        ramp: [[0.06, 100], [0.10, 80], [0.20, 30], [0.30, 0]]
+        checklist: {op: "<", threshold: 0.10}
+
+  - id: earnings_consistency
+    weight: 0.20
+    criteria:
+      - id: eps_uptrend
+        metric_id: eps_up_year_fraction_10y
+        ramp: [[0.0, 0], [1.0, 100]]
+        checklist: {op: ">=", threshold: 0.80}
+      - id: net_income_uptrend
+        metric_id: net_income_up_year_fraction_10y
+        ramp: [[0.0, 0], [1.0, 100]]
+        checklist: {op: ">=", threshold: 0.80}
+      - id: net_margin_level
+        metric_id: net_margin
+        ramp: [[0.0, 0], [0.10, 50], [0.20, 80], [0.30, 100]]
+        checklist: {op: ">", threshold: 0.20}
+      # Replaced by full points when negative_equity_strong_earnings fires.
+      - id: return_on_equity
+        metric_id: roe
+        ramp: [[0.0, 0], [0.10, 40], [0.15, 70], [0.20, 90], [0.30, 100]]
+        checklist: {op: ">", threshold: 0.15}
+        negative_equity_override: true
+
+  - id: debt_discipline
+    weight: 0.25
+    criteria:
+      - id: debt_payback
+        metric_id: lt_debt_payback_years
+        ramp: [[1.0, 100], [3.0, 80], [4.0, 60], [10.0, 0]]
+        checklist: {op: "<=", threshold: 4.0}
+      - id: adjusted_leverage
+        metric_id: debt_to_equity_adj
+        ramp: [[0.50, 100], [0.80, 80], [1.50, 40], [3.0, 0]]
+        checklist: {op: "<=", threshold: 0.80}
+      - id: interest_burden
+        metric_id: interest_pct_operating_income
+        ramp: [[0.05, 100], [0.15, 70], [0.30, 30], [0.50, 0]]
+        checklist: {op: "<", threshold: 0.15}
+      - id: debt_maturity_mix
+        metric_id: st_lt_debt_ratio
+        ramp: [[0.10, 100], [0.50, 60], [1.50, 0]]
+        checklist: {op: "<", threshold: 0.50}
+      # The book notes durable franchises (KO, MCD) run below 1.0 on earnings
+      # power alone, so a low reading floors at 30 rather than 0.
+      - id: liquidity
+        metric_id: current_ratio
+        ramp: [[0.50, 30], [1.0, 60], [1.50, 85], [2.0, 100]]
+        checklist: {op: ">", threshold: 1.0}
+
+  - id: capital_allocation
+    weight: 0.15
+    criteria:
+      - id: capex_intensity
+        metric_id: capex_pct_net_income_avg10y
+        ramp: [[0.25, 100], [0.50, 70], [1.0, 20], [1.50, 0]]
+        checklist: {op: "<", threshold: 0.50}
+      - id: buybacks
+        metric_id: buyback_years_10y
+        ramp: [[0.0, 0], [5.0, 70], [8.0, 100]]
+        checklist: {op: ">=", threshold: 5.0}
+      - id: retained_earnings_growth
+        metric_id: retained_earnings_cagr_10y
+        ramp: [[0.0, 0], [0.05, 60], [0.10, 85], [0.15, 100]]
+        checklist: {op: ">", threshold: 0.05}
+      - id: treasury_stock
+        metric_id: treasury_stock_present
+        ramp: [[0.0, 0], [1.0, 100]]
+        checklist: {op: ">", threshold: 0.0}
+
+  - id: growth_context
+    weight: 0.10
+    criteria:
+      - id: revenue_growth_4y
+        metric_id: revenue_cagr_4y
+        ramp: [[0.0, 0], [0.05, 60], [0.10, 85], [0.15, 100]]
+        checklist: {op: ">", threshold: 0.05}
+      - id: revenue_growth_10y
+        metric_id: revenue_cagr_10y
+        ramp: [[0.0, 0], [0.05, 60], [0.10, 85], [0.15, 100]]
+        checklist: {op: ">", threshold: 0.05}
+      # OLS slope per year of receivables/sales. Falling (negative) is good.
+      - id: receivables_discipline
+        metric_id: receivables_pct_sales_trend_10y
+        ramp: [[-0.005, 100], [0.0, 70], [0.005, 30], [0.010, 0]]
+        checklist: {op: "<", threshold: 0.0}
+      - id: inventory_earnings_correspondence
+        metric_id: inventory_earnings_correspondence_10y
+        ramp: [[0.0, 0], [1.0, 100]]
+        checklist: {op: ">=", threshold: 0.50}

@@ -18,7 +18,9 @@ METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.1"
 # Advisory flags that co-exist with a present value. Distinct from reason codes,
 # which explain a null. `tstk_unavailable` records that debt_to_equity_adj was
 # computed without the treasury-stock add-back; the value is still real.
-QUALITY_FLAGS: frozenset[str] = frozenset({ReasonCode.TSTK_UNAVAILABLE})
+QUALITY_FLAGS: frozenset[str] = frozenset(
+    {ReasonCode.TSTK_UNAVAILABLE, ReasonCode.DA_ALLOCATION_ASSUMED}
+)
 
 
 @dataclass(frozen=True)
