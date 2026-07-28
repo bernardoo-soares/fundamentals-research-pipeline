@@ -5,6 +5,11 @@ from __future__ import annotations
 import duckdb
 
 from ..contracts.fundamentals_annual_schema import ANNUAL_VALUE_COLUMNS
+from ..contracts.scorecard_schema import (
+    create_score_components_ddl,
+    create_score_criteria_ddl,
+    create_scores_ddl,
+)
 from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
@@ -71,7 +76,16 @@ def _build_log_ddl() -> str:
 
 
 def create_all_tables(conn: duckdb.DuckDBPyConnection) -> None:
-    """Create the three warehouse tables on an open connection."""
+    """Create every warehouse table on an open connection.
+
+    The Stage 3 score tables are created here even though `scoring/builder.py`
+    recreates them on each run, so a freshly built warehouse has the full shape
+    a reader can query -- an empty `scores` table answers "not scored yet",
+    while a missing one is indistinguishable from a broken build.
+    """
     conn.execute(_fundamentals_quarterly_ddl())
     conn.execute(_fundamentals_annual_ddl())
     conn.execute(_build_log_ddl())
+    conn.execute(create_scores_ddl())
+    conn.execute(create_score_components_ddl())
+    conn.execute(create_score_criteria_ddl())

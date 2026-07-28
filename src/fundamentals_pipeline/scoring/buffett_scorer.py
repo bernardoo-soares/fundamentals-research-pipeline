@@ -194,6 +194,7 @@ class BuffettHeuristicScorer:
         self._config = config
         self.name = config.scorer_name
         self.version = config.scorer_version
+        self.config_hash = config.config_hash
 
     @property
     def config(self) -> ScorecardConfig:

@@ -18,6 +18,22 @@ from typing import Protocol
 
 SCORES_PIPELINE_VERSION = "scores-1.0"
 
+# The quarter whose point-in-time reading stands for fiscal year end. Declared
+# here rather than in the builder because it is the same convention
+# `warehouse/annualize.py` already uses for every stock field
+# (`MAX(CASE WHEN quarter = 4 ...)`); stating it twice as a literal is how the
+# two would silently drift apart (S1.5, S2.6).
+FISCAL_YEAR_END_QUARTER = 4
+
+# Staleness arithmetic. A ticker's distance from the warehouse's latest quarter
+# is measured in quarters, so converting a year gap needs this scale.
+QUARTERS_PER_YEAR = 4
+
+# How the badge tuple serialises into the single `scores.badges` column. An
+# empty string means "scored, no warnings" -- knowledge, not absence -- which is
+# why badges is never written as NULL.
+BADGE_SEPARATOR = ","
+
 
 class ChecklistVerdict(StrEnum):
     """Closed set of literal book-checklist outcomes.
@@ -146,10 +162,17 @@ class ScorerOutput:
 
 
 class Scorer(Protocol):
-    """The scoring seam. A future MLScorer implements this same shape."""
+    """The scoring seam. A future MLScorer implements this same shape.
+
+    `config_hash` is part of the seam, not of any one implementation: it is the
+    third element of the reproducibility key (spec 7.1), so the builder must be
+    able to record it without knowing which scorer it is driving. A heuristic
+    scorer hashes its scorecard YAML; an MLScorer would hash its weights.
+    """
 
     name: str
     version: str
+    config_hash: str
 
     def score(self, inp: ScorerInput) -> ScorerOutput: ...
 
