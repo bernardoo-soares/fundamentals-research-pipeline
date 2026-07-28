@@ -67,6 +67,11 @@ class ScoreBadge(StrEnum):
 
     LOW_CONFIDENCE = "low_confidence"
     STALE_DATA = "stale_data"
+    # At least one criterion was graded off a value carrying a known caveat --
+    # a real number with a measured reliability limit, not a null. Standing
+    # directive: anything not fully reliable must be flagged to the UI, and a
+    # caveat that lives only in a spec or a docstring does not satisfy that.
+    UNRELIABLE_INPUT = "unreliable_input"
 
 
 @dataclass(frozen=True)
@@ -80,11 +85,19 @@ class MetricReading:
     metric_id: str
     value: float | None
     reason_code: str | None
+    # Advisory caveat carried alongside a real value (the metrics grain's
+    # `quality_flag`). Distinct from reason_code, which explains a null.
+    quality_flag: str | None = None
 
     def __post_init__(self) -> None:
         if (self.value is None) == (self.reason_code is None):
             raise ValueError(
                 f"{self.metric_id}: exactly one of value / reason_code must be set."
+            )
+        if self.quality_flag is not None and self.value is None:
+            raise ValueError(
+                f"{self.metric_id}: a quality_flag qualifies a value, so it "
+                "cannot accompany a null. Use reason_code for an absent value."
             )
 
 
@@ -116,6 +129,8 @@ class CriterionResult:
     checklist_verdict: ChecklistVerdict
     reason_code: str | None
     annotation: str = ""
+    # Carried through from the metrics grain so the caveat survives to the UI.
+    quality_flag: str | None = None
 
     @property
     def applicable(self) -> bool:
@@ -209,6 +224,7 @@ SCORE_CRITERIA_COLUMNS: tuple[str, ...] = (
     "checklist_verdict",
     "reason_code",
     "annotation",
+    "quality_flag",
     "computed_at",
     "pipeline_version",
 )
@@ -306,6 +322,7 @@ def create_score_criteria_ddl() -> str:
         "  checklist_verdict VARCHAR,\n"
         "  reason_code VARCHAR,\n"
         "  annotation VARCHAR,\n"
+        "  quality_flag VARCHAR,\n"
         "  computed_at TIMESTAMP,\n"
         "  pipeline_version VARCHAR,\n"
         "  PRIMARY KEY (ticker, as_of_year, scorer_name, scorer_version, "

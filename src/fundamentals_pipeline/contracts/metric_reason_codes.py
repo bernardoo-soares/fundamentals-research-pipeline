@@ -20,6 +20,13 @@ class ReasonCode:
     TSTK_UNAVAILABLE = "tstk_unavailable"
     MIXED_ERA_WINDOW = "mixed_era_window"
     ERA_NOT_SUPPORTED = "era_not_supported"
+    # Legacy-era gross profit assumes the filer placed ALL depreciation inside
+    # cost of revenue. Measured 2026-07-28: true for ~34% of filers, while ~26%
+    # present D&A outside it and are understated by a median 13.46pp. Compustat
+    # normalises the distinction away, so it is unrecoverable in that era -- the
+    # value is real but carries a known one-directional bias, which is a quality
+    # flag rather than a reason code.
+    DA_ALLOCATION_ASSUMED = "da_allocation_assumed"
 
 
 REASON_CODES: frozenset[str] = frozenset(
@@ -33,6 +40,7 @@ REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.TSTK_UNAVAILABLE,
         ReasonCode.MIXED_ERA_WINDOW,
         ReasonCode.ERA_NOT_SUPPORTED,
+        ReasonCode.DA_ALLOCATION_ASSUMED,
     }
 )
 

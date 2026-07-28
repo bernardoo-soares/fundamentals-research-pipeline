@@ -88,6 +88,7 @@ def _seed(
             "metric_id": metric_id,
             "value": value,
             "reason_code": None if value is not None else "missing_input",
+            "quality_flag": None,
         }
         for metric_id, value in quarterly.items()
     ]
@@ -102,6 +103,7 @@ def _seed(
                 "metric_id": "net_margin",
                 "value": None,
                 "reason_code": "missing_input",
+                "quality_flag": None,
             }
         )
 
@@ -114,7 +116,7 @@ def _seed(
     conn.execute(
         "CREATE TABLE metrics_quarterly "
         "(ticker VARCHAR, year INTEGER, quarter INTEGER, metric_id VARCHAR, "
-        "value DOUBLE, reason_code VARCHAR)"
+        "value DOUBLE, reason_code VARCHAR, quality_flag VARCHAR)"
     )
     for table, rows in (("metrics_trend", trend_rows), ("metrics_quarterly", quarterly_rows)):
         if not rows:
@@ -320,7 +322,7 @@ def test_staleness_is_measured_against_the_global_latest_quarter(tmp_path) -> No
     conn = duckdb.connect(str(db))
     conn.execute(
         "INSERT INTO metrics_quarterly VALUES "
-        "('FRESH', 2024, 4, 'net_margin', 0.2, NULL)"
+        "('FRESH', 2024, 4, 'net_margin', 0.2, NULL, NULL)"
     )
     conn.close()
 
@@ -342,7 +344,7 @@ def test_quarterly_only_ticker_year_is_published_not_dropped(tmp_path) -> None:
     conn = duckdb.connect(str(db))
     conn.execute(
         "INSERT INTO metrics_quarterly VALUES "
-        "('TEST', 2006, 4, 'current_ratio', 2.0, NULL)"
+        "('TEST', 2006, 4, 'current_ratio', 2.0, NULL, NULL)"
     )
     conn.close()
 
@@ -359,7 +361,7 @@ def test_readings_are_taken_at_fiscal_year_end_only(tmp_path) -> None:
     conn = duckdb.connect(str(db))
     conn.execute(
         "INSERT INTO metrics_quarterly VALUES "
-        "('TEST', 2022, 3, 'current_ratio', 2.0, NULL)"
+        "('TEST', 2022, 3, 'current_ratio', 2.0, NULL, NULL)"
     )
     conn.close()
 
@@ -377,7 +379,7 @@ def test_a_metric_id_at_both_grains_is_rejected(tmp_path) -> None:
     conn = duckdb.connect(str(db))
     conn.execute(
         "INSERT INTO metrics_quarterly VALUES "
-        "('TEST', 2022, 4, 'revenue_cagr_10y', 0.9, NULL)"
+        "('TEST', 2022, 4, 'revenue_cagr_10y', 0.9, NULL, NULL)"
     )
     conn.close()
 

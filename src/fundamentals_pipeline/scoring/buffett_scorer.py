@@ -101,6 +101,7 @@ def _score_criterion(
         weight=None,
         checklist_verdict=evaluate_checklist(reading.value, criterion.checklist),
         reason_code=None,
+        quality_flag=reading.quality_flag,
     )
 
 
@@ -168,6 +169,7 @@ def _score_component(
                     checklist_verdict=result.checklist_verdict,
                     reason_code=result.reason_code,
                     annotation=result.annotation,
+                    quality_flag=result.quality_flag,
                 )
             )
         else:
@@ -242,7 +244,9 @@ class BuffettHeuristicScorer:
                 checklist_applicable=self._checklist_applicable(all_criteria),
                 components=tuple(components),
                 criteria=tuple(all_criteria),
-                badges=self._badges(inp, self._coverage_ratio(all_criteria)),
+                badges=self._badges(
+                    inp, self._coverage_ratio(all_criteria), all_criteria
+                ),
             )
 
         final_components: list[ComponentResult] = []
@@ -276,7 +280,7 @@ class BuffettHeuristicScorer:
             checklist_applicable=self._checklist_applicable(all_criteria),
             components=tuple(final_components),
             criteria=tuple(all_criteria),
-            badges=self._badges(inp, coverage),
+            badges=self._badges(inp, coverage, all_criteria),
         )
 
     @staticmethod
@@ -302,7 +306,12 @@ class BuffettHeuristicScorer:
             if result.checklist_verdict != ChecklistVerdict.NOT_APPLICABLE
         )
 
-    def _badges(self, inp: ScorerInput, coverage: float) -> tuple[ScoreBadge, ...]:
+    def _badges(
+        self,
+        inp: ScorerInput,
+        coverage: float,
+        criteria: list[CriterionResult],
+    ) -> tuple[ScoreBadge, ...]:
         """Prominent warnings that must survive into every UI surface (D5)."""
         policy = self._config.policy
         badges: list[ScoreBadge] = []
@@ -313,4 +322,6 @@ class BuffettHeuristicScorer:
             and inp.staleness_quarters > policy.max_staleness_quarters
         ):
             badges.append(ScoreBadge.STALE_DATA)
+        if any(result.quality_flag for result in criteria if result.applicable):
+            badges.append(ScoreBadge.UNRELIABLE_INPUT)
         return tuple(badges)

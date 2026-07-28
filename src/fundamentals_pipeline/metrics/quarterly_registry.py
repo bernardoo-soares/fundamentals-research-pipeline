@@ -24,20 +24,23 @@ TREASURY_PRESENCE_THRESHOLD = 0.0
 _VALID_ERAS = frozenset(SourceEra)
 _LEGACY_ONLY = frozenset({SourceEra.LEGACY})
 
-# Shared by every gross-profit-denominated metric: Compustat states cogsq and
-# xsgaq BEFORE depreciation, so gross profit is saleq - cogsq - dpq and the
-# arithmetic is legacy-specific (SimFin's Cost of Revenue already includes D&A).
-# Full evidence in metrics/quarterly.ttm_gross_profit and spec
-# 2026-07-26_SP3_METRIC_CATALOG_COMPLETION_DESIGN section 2.
+# Shared by every gross-profit-denominated metric. Full evidence in
+# metrics/gross_profit.py and specs 2026-07-26_SP3_METRIC_CATALOG_COMPLETION
+# _DESIGN section 2.2.1 and 2026-07-28_GROSS_PROFIT_ERA_AND_RELIABILITY_FLAGS
+# _DESIGN.
 _GROSS_PROFIT_ERA_NOTE = (
-    "LEGACY ERA ONLY: gross profit is saleq_ttm - cogsq_ttm - dpq_ttm because "
-    "Compustat states cogsq before depreciation (the identity saleq - (cogsq + "
-    "xsgaq) = oibdpq holds for 99.69% of 9,035 legacy quarters). SimFin's Cost "
-    "of Revenue already includes D&A, so the correct arithmetic differs by era "
-    "and one formula must not span both (S4.3). SimFin-era rows are null with "
-    "era_not_supported rather than false. Conservative bias: dpq includes D&A "
-    "allocated to SG&A, understating gross profit by a measured 0.14-0.44pp of "
-    "revenue (exact for AAPL and KO FY2021)."
+    "ERA-DISPATCHED ARITHMETIC (both eras supported since 2026-07-28): legacy "
+    "gross profit is saleq_ttm - cogsq_ttm - dpq_ttm because Compustat states "
+    "cogsq before depreciation (saleq - (cogsq + xsgaq) = oibdpq holds for "
+    "99.69% of 9,035 legacy quarters); SimFin gross profit is saleq_ttm - "
+    "cogsq_ttm because SimFin's Cost of Revenue IS the as-reported line. The "
+    "concept is single, only the arithmetic differs, and a window spanning the "
+    "boundary is nulled mixed_era_window so no value mixes the two (S4.3). "
+    "Legacy rows carry the da_allocation_assumed quality flag: Compustat "
+    "normalises away the filer's own D&A allocation, so a = 1 is assumed -- "
+    "exact for the 34.4% of filers who fold all D&A into COGS, understating by "
+    "a median 13.46pp for the 26.4% who present it outside. One-directional, so "
+    "it can never manufacture a false '>40%' pass. SimFin rows need no flag."
 )
 
 QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
@@ -78,7 +81,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "switch year, 29.0% flip the <15% verdict. SimFin-era rows are null "
         "with era_not_supported rather than false.)",
         ttm_ratio("xintq", "oiadpq"),
-        supported_eras=frozenset({SourceEra.LEGACY}),
+        supported_eras=_LEGACY_ONLY,
     ),
     QuarterMetric(
         "treasury_stock_present",
@@ -88,36 +91,33 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     ),
     QuarterMetric(
         "gross_margin",
-        "1",
+        "2",
         "(saleq_ttm - cogsq_ttm - dpq_ttm) / saleq_ttm. "
         + _GROSS_PROFIT_ERA_NOTE
         + " Golden: KO FY2021 (38655 - 13905 - 1452) / 38655 = 23298 / 38655 = "
         "0.602716, exactly Coca-Cola's published gross margin; the uncorrected "
         "(saleq - cogsq) form gives 0.640279, overstated by 3.76pp.",
         gross_margin_metric(),
-        supported_eras=_LEGACY_ONLY,
     ),
     QuarterMetric(
         "sga_pct_gross_profit",
-        "1",
+        "2",
         "xsgaq_ttm / gross_profit_ttm. "
         + _GROSS_PROFIT_ERA_NOTE
         + " Second, smaller bias in the same direction: xsgaq is ALSO stated "
         "before depreciation, so it understates published SG&A (KO FY2021 "
         "11,964 against a published 12,144, a 1.5% shortfall).",
         ttm_over_gross_profit("xsgaq"),
-        supported_eras=_LEGACY_ONLY,
     ),
     QuarterMetric(
         "rd_pct_gross_profit",
-        "1",
+        "2",
         "xrdq_ttm / gross_profit_ttm. " + _GROSS_PROFIT_ERA_NOTE,
         ttm_over_gross_profit("xrdq"),
-        supported_eras=_LEGACY_ONLY,
     ),
     QuarterMetric(
         "dep_pct_gross_profit",
-        "1",
+        "2",
         "dpq_ttm / gross_profit_ttm. "
         + _GROSS_PROFIT_ERA_NOTE
         + " Golden: KO FY2021 1452 / 23298 = 0.062323, which reproduces the "
@@ -126,7 +126,6 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "uncorrected gross-profit denominator (1452 / 24750 = 0.058667), so the "
         "catalog's anchor and its formula disagreed with each other.",
         ttm_over_gross_profit("dpq"),
-        supported_eras=_LEGACY_ONLY,
     ),
 )
 

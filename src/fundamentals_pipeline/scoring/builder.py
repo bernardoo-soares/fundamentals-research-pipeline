@@ -79,11 +79,11 @@ def _load_readings(conn) -> dict[TickerYear, dict[str, MetricReading]]:
     measurement.
     """
     trend_rows = conn.execute(
-        f"SELECT ticker, as_of_year, metric_id, value, reason_code "
+        f"SELECT ticker, as_of_year, metric_id, value, reason_code, NULL "
         f"FROM {_TREND_TABLE}"
     ).fetchall()
     quarterly_rows = conn.execute(
-        f"SELECT ticker, year, metric_id, value, reason_code "
+        f"SELECT ticker, year, metric_id, value, reason_code, quality_flag "
         f"FROM {_QUARTERLY_TABLE} WHERE quarter = {FISCAL_YEAR_END_QUARTER}"
     ).fetchall()
 
@@ -97,9 +97,15 @@ def _load_readings(conn) -> dict[TickerYear, dict[str, MetricReading]]:
         )
 
     readings: dict[TickerYear, dict[str, MetricReading]] = {}
-    for ticker, year, metric_id, value, reason_code in (*trend_rows, *quarterly_rows):
+    for ticker, year, metric_id, value, reason_code, flag in (
+        *trend_rows,
+        *quarterly_rows,
+    ):
         readings.setdefault((ticker, int(year)), {})[metric_id] = MetricReading(
-            metric_id=metric_id, value=value, reason_code=reason_code
+            metric_id=metric_id,
+            value=value,
+            reason_code=reason_code,
+            quality_flag=flag,
         )
     return readings
 
@@ -175,6 +181,7 @@ def _score_rows(
             "checklist_verdict": criterion.checklist_verdict.value,
             "reason_code": criterion.reason_code,
             "annotation": criterion.annotation,
+            "quality_flag": criterion.quality_flag,
             **provenance,
         }
         for criterion in output.criteria
