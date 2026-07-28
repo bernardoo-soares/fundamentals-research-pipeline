@@ -14,6 +14,7 @@ from ..contracts.stage1_fundamentals_schema import (
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
     SUPPORT_RAW_FIELDS,
+    TEMPORAL_COLUMNS,
 )
 
 WAREHOUSE_PIPELINE_VERSION = "warehouse-1.0"
@@ -27,12 +28,16 @@ QUARTERLY_RAW_FIELDS: tuple[str, ...] = (
 
 def _fundamentals_quarterly_ddl() -> str:
     field_cols = ",\n  ".join(f"{field} DOUBLE" for field in QUARTERLY_RAW_FIELDS)
+    # Fiscal dates are DATE, never DOUBLE: they are not monetary quantities and
+    # must not be reachable by unit normalisation or the plausibility gate.
+    date_cols = ",\n  ".join(f"{column} DATE" for column in TEMPORAL_COLUMNS)
     return (
         "CREATE TABLE fundamentals_quarterly (\n"
         "  ticker VARCHAR NOT NULL,\n"
         "  year INTEGER NOT NULL,\n"
         "  quarter INTEGER NOT NULL,\n"
         f"  {field_cols},\n"
+        f"  {date_cols},\n"
         "  source_era VARCHAR,\n"
         "  computed_at TIMESTAMP,\n"
         "  pipeline_version VARCHAR,\n"

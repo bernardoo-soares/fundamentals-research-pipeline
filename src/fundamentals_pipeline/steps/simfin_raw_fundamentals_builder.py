@@ -345,6 +345,18 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
         }
     )
 
+    # Stage 1 temporal columns. SimFin's "Report Date" is the fiscal period
+    # end and matches Compustat's datadate exactly for 98.6% of the FY2023
+    # overlap; "Publish Date" is the filing date, a different event from
+    # Compustat's rdq earnings announcement (43.0% exact) -- hence the two are
+    # declared separately in field_era_semantics.
+    out["period_end_date"] = pd.to_datetime(
+        frame.get("Report Date"), errors="coerce"
+    )
+    out["publish_date"] = pd.to_datetime(
+        frame.get("Publish Date"), errors="coerce"
+    )
+
     out["niq"] = _numeric_series(frame, "Net Income")
     # SimFin states tax as a negative expense; Compustat states it positive.
     out["txtq"] = _positive_expense(frame, "Income Tax (Expense) Benefit, Net")

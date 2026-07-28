@@ -98,6 +98,17 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         ttm_sum("epspxq"),
     ),
     QuarterMetric(
+        "net_income_ttm",
+        "1",
+        "sum of the 4 most recent quarterly niq, in millions. Consumed by the "
+        "valuation layer INSTEAD of eps_ttm: SimFin's prices are "
+        "split-adjusted while epspxq is as-reported, so price / eps mixes two "
+        "share bases and is wrong wherever they differ (BKNG FY2024 reads a "
+        "close of 198.74 against a real ~4,900). market_cap / net_income is "
+        "invariant to split adjustment because the same basis cancels.",
+        ttm_sum("niq"),
+    ),
+    QuarterMetric(
         "treasury_stock_present",
         "1",
         "1 if tstkq_latest > 0 else 0",

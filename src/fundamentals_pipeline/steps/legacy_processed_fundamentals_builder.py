@@ -116,6 +116,7 @@ def _legacy_input_columns() -> set[str]:
     return {
         "tic",
         "datadate",
+        "rdq",
         "fyearq",
         "fqtr",
         "tstkq",
@@ -267,6 +268,15 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
         df["period_end"] = pd.to_datetime(df["datadate"], errors="coerce")
     else:
         df["period_end"] = pd.NaT
+    # Stage 1 temporal columns. `datadate` is the fiscal period end; `rdq` is
+    # Compustat's earnings-announcement date, which is NOT SimFin's filing
+    # date -- they agree exactly for only 43.0% of the overlap, so the two
+    # eras are declared non-equivalent on publish_date (field_era_semantics).
+    df["period_end_date"] = df["period_end"]
+    if "rdq" in df.columns:
+        df["publish_date"] = pd.to_datetime(df["rdq"], errors="coerce")
+    else:
+        df["publish_date"] = pd.NaT
 
     df = _coerce_numeric_columns(df, ["fyearq", "fqtr"])
 
@@ -295,6 +305,8 @@ def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:
         "fyearq",
         "fqtr",
         "period_end",
+        "period_end_date",
+        "publish_date",
         "filed_date",
         "form_type",
         "source_system",

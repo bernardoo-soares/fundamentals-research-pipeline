@@ -109,7 +109,70 @@ spread.
 | price gaps > 10 calendar days (spec §9.3) | **0 tickers** |
 | daily moves > 50% (flagged, not dropped) | 3 rows, 3 tickers |
 
-## 5. Open items
+## 5. Historical valuation (added 2026-07-28)
+
+Stage 1 now carries **`period_end_date`** and **`publish_date`**
+(`TEMPORAL_COLUMNS`), which unlocks `valuation_history` at the
+`(ticker, fiscal_year)` grain.
+
+The date could not be derived: measured, the **fiscal quarter differs from the
+calendar quarter of the period end for 21.5% of rows**, so aligning a price by
+guessing would have been wrong for one company in five and silently off by up
+to a quarter. AAPL FY2023 Q1 ends 2022-12-31.
+
+Cross-era, the two are different things and are declared as such:
+
+| field | legacy | SimFin | agreement |
+|---|---|---|---|
+| `period_end_date` | `datadate` | `Report Date` | **98.6% exact** |
+| `publish_date` | `rdq` (earnings announcement) | `Publish Date` (filing) | **43.0% exact**, median −1 day |
+
+The price is the last close **at or before** the period end, within
+`MAX_PRICE_LOOKBACK_DAYS = 7`. Looking backward only is deliberate — a close
+after the period end is information from the future. Measured: **median lag 0
+days, max 3**, and **0 rows** take a price from after the period end.
+
+`publish_date` is stored but not used as the anchor: v1 answers "what was the
+company worth when its year closed", not "what could the market have known".
+The gap is a median 40 days, so the distinction is material, and the column is
+there so a publish-anchored variant needs no rebuild.
+
+### 5.1 Two real defects this surfaced
+
+**A vendor scale error reached a headline screen.** SimFin published MCD FY2024
+`Shares (Basic)` as **718** against a diluted 722,000,000 for two quarters,
+having read 722,000,000 for the other two. Derived EPS became **2,809,192 per
+share** and a trailing P/E of **0.0** — putting McDonald's at the top of a
+cheapest-stock screen. A new `share_count_scale` plausibility rule nulls a basic
+count below `MIN_BASIC_TO_DILUTED_SHARE_RATIO = 0.5` of its diluted pair, and
+also nulls the SimFin-era `epspxq` derived from it (legacy `epspxq` is
+as-reported and untouched). Nulled values rose 151 → 224.
+
+**P/E mixed two share bases — my own defect, caught in verification.**
+SimFin's prices are **split-adjusted** while `epspxq` is as-reported. BKNG
+FY2024 carries a close of **198.74** against a real ~$4,900 with a
+correspondingly inflated share count: market cap comes out right because the
+adjustment cancels, but `close / eps_ttm` gave a P/E of **1.1** against a true
+~28. KLAC read 4.0 against ~35.
+
+Valuation now derives from **totals**, which is invariant to split adjustment
+by construction:
+
+```
+pe_ttm         = market_cap / (net_income_ttm x 1e6)
+earnings_yield = (net_income_ttm x 1e6) / market_cap
+```
+
+A new `net_income_ttm` metric replaces `eps_ttm` in the valuation path.
+`eps_ttm` remains for per-share trend use, where the basis is self-consistent.
+
+Validated: AAPL's P/E by fiscal year end now reads **34.2 / 24.9 / 22.2 / 27.7
+/ 37.8** (FY2020–24), all correct — FY2020 read 10.6 before the fix. The
+FY2024 cheapest-large-cap screen returns CMCSA 8.9, GM 9.8, AFL 10.6, TRV 10.9,
+JPM 11.5: banks, insurers, autos and energy, which is what a low-P/E screen
+should return.
+
+## 6. Open items
 
 1. **Historical point-in-time valuation** needs fiscal report dates, which
    Stage 1 does not carry — SimFin's source files do (`Report Date`). v1

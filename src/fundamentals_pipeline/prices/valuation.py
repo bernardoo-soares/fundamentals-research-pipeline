@@ -22,14 +22,28 @@ from dataclasses import dataclass
 
 from ..contracts.prices_schema import ValuationReasonCode
 
+# `niq` is stated in millions across both providers, while a price file share
+# count is in actual shares -- so a market cap is in units and total earnings
+# must be scaled before the two are divided.
+MILLIONS = 1_000_000.0
+
 
 @dataclass(frozen=True)
 class ValuationInputs:
-    """Everything needed to value one ticker at one price date."""
+    """Everything needed to value one ticker at one price date.
+
+    `net_income_ttm` (millions), NOT `eps_ttm`, drives the earnings ratios.
+    Measured 2026-07-28: SimFin's prices are split-adjusted while `epspxq` is
+    as-reported, so `close / eps_ttm` silently mixes two share bases. BKNG
+    FY2024 carries a close of 198.74 against a real ~4,900 with a
+    correspondingly inflated share count -- market cap comes out right because
+    the adjustment cancels, but the per-share P/E read 1.1 against a true ~28.
+    Deriving from totals is invariant to split adjustment by construction.
+    """
 
     close: float | None
     shares_outstanding: float | None
-    eps_ttm: float | None
+    net_income_ttm: float | None
 
 
 @dataclass(frozen=True)
@@ -42,7 +56,7 @@ class Valuation:
     """
 
     market_cap: float | None
-    eps_ttm: float | None
+    net_income_ttm: float | None
     pe_ttm: float | None
     earnings_yield: float | None
     reason_code: str | None
@@ -66,30 +80,38 @@ def value(inputs: ValuationInputs) -> Valuation:
     """
     if inputs.close is None:
         return Valuation(
-            None, inputs.eps_ttm, None, None,
+            None, inputs.net_income_ttm, None, None,
             ValuationReasonCode.PRICE_UNAVAILABLE,
             ValuationReasonCode.PRICE_UNAVAILABLE,
         )
     if inputs.shares_outstanding is None:
         return Valuation(
-            None, inputs.eps_ttm, None, None,
+            None, inputs.net_income_ttm, None, None,
             ValuationReasonCode.SHARES_UNAVAILABLE,
             ValuationReasonCode.SHARES_UNAVAILABLE,
         )
 
     market_cap = inputs.close * inputs.shares_outstanding
 
-    if inputs.eps_ttm is None:
+    if inputs.net_income_ttm is None:
         return Valuation(
             market_cap, None, None, None, None,
             ValuationReasonCode.EPS_UNAVAILABLE,
         )
 
-    earnings_yield = inputs.eps_ttm / inputs.close
-    if inputs.eps_ttm <= 0:
+    earnings = inputs.net_income_ttm * MILLIONS
+    if market_cap <= 0:
+        return Valuation(
+            None, inputs.net_income_ttm, None, None,
+            ValuationReasonCode.PRICE_UNAVAILABLE,
+            ValuationReasonCode.PRICE_UNAVAILABLE,
+        )
+
+    earnings_yield = earnings / market_cap
+    if earnings <= 0:
         return Valuation(
             market_cap,
-            inputs.eps_ttm,
+            inputs.net_income_ttm,
             None,
             earnings_yield,
             None,
@@ -98,8 +120,8 @@ def value(inputs: ValuationInputs) -> Valuation:
 
     return Valuation(
         market_cap,
-        inputs.eps_ttm,
-        inputs.close / inputs.eps_ttm,
+        inputs.net_income_ttm,
+        market_cap / earnings,
         earnings_yield,
         None,
         None,

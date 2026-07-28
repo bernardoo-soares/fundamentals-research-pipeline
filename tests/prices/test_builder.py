@@ -50,7 +50,7 @@ def _seed_warehouse(path, tickers=("AAPL", "KO"), eps=None) -> None:
                 "ticker": ticker,
                 "year": year,
                 "quarter": 4,
-                "metric_id": "eps_ttm",
+                "metric_id": "net_income_ttm",
                 "value": val,
                 "reason_code": None if val is not None else "missing_input",
                 "quality_flag": None,
@@ -157,27 +157,28 @@ def test_valuation_computes_the_three_figures(tmp_path) -> None:
 
     build_valuation_current(warehouse_path=db)
 
-    close, shares, cap, eps, pe, ey = _fetch(
+    close, shares, cap, earnings, pe, ey = _fetch(
         db,
-        "SELECT close, shares_outstanding, market_cap, eps_ttm, pe_ttm, "
+        "SELECT close, shares_outstanding, market_cap, net_income_ttm, pe_ttm, "
         "earnings_yield FROM valuation_current WHERE ticker='AAPL'",
     )[0]
     assert (close, shares) == (102.0, 2_000_000.0)
     assert cap == pytest.approx(204_000_000.0)
-    assert (eps, pe) == (5.0, pytest.approx(102.0 / 5.0))
-    assert ey == pytest.approx(5.0 / 102.0)
+    # 5.0 million of earnings against a 204 million market cap.
+    assert (earnings, pe) == (5.0, pytest.approx(204_000_000.0 / 5_000_000.0))
+    assert ey == pytest.approx(5_000_000.0 / 204_000_000.0)
 
 
-def test_valuation_uses_the_latest_eps_not_an_arbitrary_one(tmp_path) -> None:
+def test_valuation_uses_the_latest_earnings_not_an_arbitrary_one(tmp_path) -> None:
     db = tmp_path / "research.duckdb"
     _seed_warehouse(db, eps={"AAPL": {2022: 1.0, 2024: 5.0, 2023: 3.0}})
     build_prices_daily(warehouse_path=db, price_frame=_price_frame())
 
     build_valuation_current(warehouse_path=db)
 
-    assert _fetch(db, "SELECT eps_ttm FROM valuation_current WHERE ticker='AAPL'") == [
-        (5.0,)
-    ]
+    assert _fetch(
+        db, "SELECT net_income_ttm FROM valuation_current WHERE ticker='AAPL'"
+    ) == [(5.0,)]
 
 
 def test_unpriced_ticker_is_published_with_a_reason_not_omitted(tmp_path) -> None:
@@ -201,7 +202,7 @@ def test_no_nan_or_inf_reaches_a_stored_valuation_column(tmp_path) -> None:
 
     build_valuation_current(warehouse_path=db)
 
-    for column in ("market_cap", "pe_ttm", "earnings_yield", "eps_ttm"):
+    for column in ("market_cap", "pe_ttm", "earnings_yield", "net_income_ttm"):
         bad = _fetch(
             db,
             f"SELECT COUNT(*) FROM valuation_current WHERE {column} IS NOT NULL "

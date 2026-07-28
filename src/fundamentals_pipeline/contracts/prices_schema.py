@@ -86,7 +86,7 @@ VALUATION_CURRENT_COLUMNS: tuple[str, ...] = (
     "close",
     "shares_outstanding",
     "market_cap",
-    "eps_ttm",
+    "net_income_ttm",
     "pe_ttm",
     "earnings_yield",
     "reason_code",
@@ -130,7 +130,7 @@ def create_valuation_current_ddl() -> str:
         "  close DOUBLE,\n"
         "  shares_outstanding DOUBLE,\n"
         "  market_cap DOUBLE,\n"
-        "  eps_ttm DOUBLE,\n"
+        "  net_income_ttm DOUBLE,\n"
         "  pe_ttm DOUBLE,\n"
         "  earnings_yield DOUBLE,\n"
         "  reason_code VARCHAR,\n"
@@ -138,5 +138,68 @@ def create_valuation_current_ddl() -> str:
         "  computed_at TIMESTAMP,\n"
         "  pipeline_version VARCHAR,\n"
         "  PRIMARY KEY (ticker, price_date)\n"
+        ")"
+    )
+
+
+VALUATION_HISTORY_COLUMNS: tuple[str, ...] = (
+    "ticker",
+    "fiscal_year",
+    "period_end_date",
+    "publish_date",
+    "price_date",
+    "price_lag_days",
+    "close",
+    "shares_outstanding",
+    "market_cap",
+    "net_income_ttm",
+    "pe_ttm",
+    "earnings_yield",
+    "reason_code",
+    "quality_flag",
+    "computed_at",
+    "pipeline_version",
+)
+
+# How far before a fiscal period end we will look for a trading day. Markets
+# close for weekends and holidays, so an exact-date join would lose roughly
+# three fiscal year ends in ten for no reason. Beyond this the price is too far
+# from the period end to represent it, and the row is nulled rather than
+# stretched -- a stale price silently attached to a period end would be exactly
+# the kind of quiet wrongness this project exists to avoid.
+MAX_PRICE_LOOKBACK_DAYS = 7
+
+
+def create_valuation_history_ddl() -> str:
+    """DDL for `valuation_history`: valuation at each fiscal year end.
+
+    Grain is `(ticker, fiscal_year)`. `period_end_date` anchors the price;
+    `publish_date` is stored beside it because the two are a median 28-33 days
+    apart, and that gap is the difference between "what the company was worth
+    when its year closed" and "what the market could have known". v1 answers
+    the first question, which is what a descriptive look-back needs (spec D8
+    explicitly forbids calling any of this a backtest). Anchoring on
+    `publish_date` instead is what a tradeable signal would require, and the
+    column is stored so that remains possible without a rebuild.
+    """
+    return (
+        "CREATE TABLE valuation_history (\n"
+        "  ticker VARCHAR NOT NULL,\n"
+        "  fiscal_year INTEGER NOT NULL,\n"
+        "  period_end_date DATE,\n"
+        "  publish_date DATE,\n"
+        "  price_date DATE,\n"
+        "  price_lag_days INTEGER,\n"
+        "  close DOUBLE,\n"
+        "  shares_outstanding DOUBLE,\n"
+        "  market_cap DOUBLE,\n"
+        "  net_income_ttm DOUBLE,\n"
+        "  pe_ttm DOUBLE,\n"
+        "  earnings_yield DOUBLE,\n"
+        "  reason_code VARCHAR,\n"
+        "  quality_flag VARCHAR,\n"
+        "  computed_at TIMESTAMP,\n"
+        "  pipeline_version VARCHAR,\n"
+        "  PRIMARY KEY (ticker, fiscal_year)\n"
         ")"
     )

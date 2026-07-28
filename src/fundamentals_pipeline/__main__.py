@@ -15,7 +15,11 @@ from .core.logging import configure_logging, get_logger
 from .core.settings import get_settings
 from .metrics.builder import build_metrics_trend
 from .metrics.quarterly_builder import build_metrics_quarterly
-from .prices.builder import build_prices_daily, build_valuation_current
+from .prices.builder import (
+    build_prices_daily,
+    build_valuation_current,
+    build_valuation_history,
+)
 from .scoring.builder import build_scores
 from .steps.cross_era_semantic_audit import run_cross_era_audit_from_dirs
 from .steps.legacy_processed_fundamentals_builder import (
@@ -289,6 +293,11 @@ def _build_parser() -> argparse.ArgumentParser:
     valuation_parser.add_argument(
         "--warehouse-path",
         default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+    )
+    valuation_parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Also value each fiscal year end into valuation_history.",
     )
 
     extension_audit_parser = subparsers.add_parser(
@@ -820,6 +829,11 @@ def main() -> None:
         LOG.info("Valuation build completed: %s", result)
         for key, value in result.items():
             print(f"{key}={value}")
+        if args.history:
+            history = build_valuation_history(warehouse_path=args.warehouse_path)
+            LOG.info("Valuation history build completed: %s", history)
+            for key, value in history.items():
+                print(f"history_{key}={value}")
         return
 
     parser.error(f"Unknown command: {args.command}")

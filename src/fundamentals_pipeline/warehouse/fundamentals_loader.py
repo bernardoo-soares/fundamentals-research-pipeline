@@ -8,15 +8,21 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from ..contracts.stage1_fundamentals_schema import STAGE1_OUTPUT_COLUMNS
-from .plausibility import apply_non_negative_gate
+from ..contracts.stage1_fundamentals_schema import (
+    STAGE1_OUTPUT_COLUMNS,
+    TEMPORAL_COLUMNS,
+)
+from .plausibility import apply_non_negative_gate, apply_share_scale_gate
 from .schema import QUARTERLY_RAW_FIELDS
 
+# Must mirror the DDL's column order (schema._fundamentals_quarterly_ddl):
+# the fiscal dates sit after the monetary fields and before provenance.
 _INSERT_COLUMNS = (
     "ticker",
     "year",
     "quarter",
     *QUARTERLY_RAW_FIELDS,
+    *TEMPORAL_COLUMNS,
     "source_era",
     "computed_at",
     "pipeline_version",
@@ -76,7 +82,11 @@ def load_fundamentals_quarterly(
     combined = pd.concat(frames, ignore_index=True)
     _validate_unique_keys(combined)
     gated = apply_non_negative_gate(combined)
-    combined = gated.frame
+    scale_gated = apply_share_scale_gate(gated.frame)
+    combined = scale_gated.frame
+    violations = pd.concat(
+        [gated.violations, scale_gated.violations], ignore_index=True
+    )
     combined["computed_at"] = datetime.now(UTC).replace(tzinfo=None)
     combined["pipeline_version"] = pipeline_version
     combined = combined[list(_INSERT_COLUMNS)]
@@ -90,4 +100,4 @@ def load_fundamentals_quarterly(
         )
     finally:
         conn.unregister("staging_quarterly")
-    return int(len(combined)), gated.violations
+    return int(len(combined)), violations

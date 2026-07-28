@@ -104,12 +104,30 @@ STAGE1_KEY_COLUMNS: tuple[str, ...] = ("ticker", "year", "quarter")
 # CORE/SUPPORT/EXTENDED groups so unit classification is unaffected.
 PROVENANCE_COLUMNS: tuple[str, ...] = ("source_era",)
 
+# Fiscal dates. Excluded from the CORE/SUPPORT/EXTENDED groups for the same
+# reason as PROVENANCE_COLUMNS: they are not monetary quantities, so unit
+# classification, unit normalisation, the plausibility gate and the numeric
+# cross-era audit must never see them.
+#
+# `period_end_date` is the fiscal quarter end. It cannot be derived from
+# (year, quarter): measured 2026-07-28, the fiscal quarter differs from the
+# calendar quarter of the period end for 23.3% of legacy rows, so any price
+# alignment that guessed the date would be wrong for roughly one company in
+# four -- and wrong in a way that silently picks a price up to three months
+# from the intended one.
+#
+# `publish_date` is when the figures reached the market. It is what makes a
+# point-in-time claim honest, and is deliberately a SEPARATE field: the two
+# are a median 32 (legacy) to 39 (SimFin) days apart.
+TEMPORAL_COLUMNS: tuple[str, ...] = ("period_end_date", "publish_date")
+
 # What a single provider's builder emits into its staging directory.
 STAGE1_RAW_COLUMNS: tuple[str, ...] = (
     *STAGE1_KEY_COLUMNS,
     *CORE_RAW_FIELDS,
     *SUPPORT_RAW_FIELDS,
     *EXTENDED_RAW_FIELDS,
+    *TEMPORAL_COLUMNS,
 )
 
 # What is published after era resolution and read by the warehouse loader.

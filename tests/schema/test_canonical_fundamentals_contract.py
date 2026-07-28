@@ -14,6 +14,7 @@ from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
     STAGE1_OUTPUT_COLUMNS,
     STAGE1_RAW_COLUMNS,
     SUPPORT_RAW_FIELDS,
+    TEMPORAL_COLUMNS,
     stage1_yearly_columns,
     validate_stage1_frame_columns,
 )
@@ -25,12 +26,13 @@ def test_stage1_output_columns_start_with_provider_agnostic_key() -> None:
 
 
 def test_stage1_output_columns_include_core_support_and_extended_fields_only() -> None:
-    """A builder emits raw fields only; provenance is added at publish time."""
+    """A builder emits raw fields and fiscal dates; provenance is added later."""
     assert STAGE1_RAW_COLUMNS == (
         *STAGE1_KEY_COLUMNS,
         *CORE_RAW_FIELDS,
         *SUPPORT_RAW_FIELDS,
         *EXTENDED_RAW_FIELDS,
+        *TEMPORAL_COLUMNS,
     )
     assert STAGE1_OUTPUT_COLUMNS == (*STAGE1_RAW_COLUMNS, *PROVENANCE_COLUMNS)
     assert "capxy" in SUPPORT_RAW_FIELDS
@@ -57,7 +59,10 @@ def test_extended_raw_fields_are_appended_after_support_fields() -> None:
         "rectq",
     )
     support_end = 3 + len(CORE_RAW_FIELDS) + len(SUPPORT_RAW_FIELDS)
-    assert STAGE1_RAW_COLUMNS[support_end:] == EXTENDED_RAW_FIELDS
+    extended_end = support_end + len(EXTENDED_RAW_FIELDS)
+    assert STAGE1_RAW_COLUMNS[support_end:extended_end] == EXTENDED_RAW_FIELDS
+    # Fiscal dates trail the monetary fields and are not part of any of them.
+    assert STAGE1_RAW_COLUMNS[extended_end:] == TEMPORAL_COLUMNS
 
 
 def test_extended_raw_fields_are_all_monetary() -> None:
@@ -111,3 +116,26 @@ def test_dvy_is_published_support_field() -> None:
 def test_dvy_is_monetary() -> None:
     """dvy is a currency amount, so unit normalization must apply to it."""
     assert "dvy" in MONETARY_RAW_FIELDS
+
+
+def test_fiscal_dates_are_not_monetary_fields() -> None:
+    """The whole point of a separate group: units must never reach a date.
+
+    A date classified as monetary would be scaled by the unit normaliser and
+    screened by the plausibility gate, both of which would be nonsense.
+    """
+    for column in TEMPORAL_COLUMNS:
+        assert column not in MONETARY_RAW_FIELDS
+        assert column not in CORE_RAW_FIELDS
+        assert column not in SUPPORT_RAW_FIELDS
+        assert column not in EXTENDED_RAW_FIELDS
+
+
+def test_period_end_and_publish_date_are_separate_fields() -> None:
+    """They are a median 32-39 days apart and mean different things.
+
+    `period_end_date` is when the quarter ended; `publish_date` is when the
+    market learned. Collapsing them would make every point-in-time claim wrong
+    by about a month, always in the look-ahead direction.
+    """
+    assert TEMPORAL_COLUMNS == ("period_end_date", "publish_date")

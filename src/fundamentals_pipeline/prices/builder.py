@@ -13,21 +13,26 @@ from pathlib import Path
 import pandas as pd
 
 from ..contracts.prices_schema import (
+    MAX_PRICE_LOOKBACK_DAYS,
     PRICE_SOURCE_SIMFIN,
     PRICES_DAILY_COLUMNS,
     PRICES_PIPELINE_VERSION,
     VALUATION_CURRENT_COLUMNS,
+    VALUATION_HISTORY_COLUMNS,
     ValuationReasonCode,
     create_prices_daily_ddl,
     create_valuation_current_ddl,
+    create_valuation_history_ddl,
 )
+from ..contracts.scorecard_schema import FISCAL_YEAR_END_QUARTER
 from ..warehouse.connection import open_warehouse
 from .valuation import ValuationInputs, value
 
 _PRICES_TABLE = "prices_daily"
 _VALUATION_TABLE = "valuation_current"
+_VALUATION_HISTORY_TABLE = "valuation_history"
 _QUARTERLY_METRICS_TABLE = "metrics_quarterly"
-_EPS_METRIC_ID = "eps_ttm"
+_EARNINGS_METRIC_ID = "net_income_ttm"
 _STAGING_PREFIX = "staging_"
 
 # SimFin's column names -> our contract's. Declared once (S1.1) so a vendor
@@ -184,13 +189,13 @@ def build_valuation_current(
         )
         # Latest EPS TTM per ticker, by (year, quarter). Ordering is explicit so
         # the pick never depends on row order (S3.3).
-        eps = dict(
+        earnings = dict(
             (row[0], row[1])
             for row in conn.execute(
                 f"SELECT ticker, value FROM (SELECT ticker, value, "
                 f"ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY year DESC, "
                 f"quarter DESC) AS rn FROM {_QUARTERLY_METRICS_TABLE} "
-                f"WHERE metric_id = '{_EPS_METRIC_ID}' AND value IS NOT NULL) "
+                f"WHERE metric_id = '{_EARNINGS_METRIC_ID}' AND value IS NOT NULL) "
                 "WHERE rn = 1"
             ).fetchall()
         )
@@ -202,7 +207,7 @@ def build_valuation_current(
                 ValuationInputs(
                     close=close,
                     shares_outstanding=shares,
-                    eps_ttm=eps.get(ticker),
+                    net_income_ttm=earnings.get(ticker),
                 )
             )
             rows.append(
@@ -212,7 +217,7 @@ def build_valuation_current(
                     "close": close,
                     "shares_outstanding": shares,
                     "market_cap": result.market_cap,
-                    "eps_ttm": result.eps_ttm,
+                    "net_income_ttm": result.net_income_ttm,
                     "pe_ttm": result.pe_ttm,
                     "earnings_yield": result.earnings_yield,
                     "reason_code": result.reason_code,
@@ -255,4 +260,153 @@ def build_valuation_current(
         "non_positive_eps": int(
             (frame["quality_flag"] == ValuationReasonCode.NON_POSITIVE_EPS).sum()
         ),
+    }
+
+
+def build_valuation_history(
+    *,
+    warehouse_path: str | Path,
+    pipeline_version: str = PRICES_PIPELINE_VERSION,
+) -> dict[str, object]:
+    """Value every ticker at each fiscal year end its period-end date allows.
+
+    Unlocked by Stage 1 carrying `period_end_date`: the fiscal year end cannot
+    be derived from `(year, quarter)` -- measured, the fiscal quarter differs
+    from the calendar quarter of the period end for 21.5% of rows -- so before
+    this column existed the price could only be aligned by guessing, which
+    would have been wrong for roughly one company in five and silently off by
+    up to a quarter.
+
+    The price is the last close at or before the period end, within
+    `MAX_PRICE_LOOKBACK_DAYS`. Looking BACKWARD only is deliberate: a close
+    from after the period end is information from the future. The realised gap
+    is stored as `price_lag_days` so a stretched match is visible rather than
+    implied, and a period end with no trading day inside the window is nulled
+    with `price_unavailable` rather than reaching further.
+
+    `publish_date` is carried but NOT used as the anchor. The two are a median
+    28-33 days apart, and that gap is exactly the difference between "what the
+    company was worth when its year closed" (this table) and "what the market
+    could have known" (a tradeable signal, which spec D8 explicitly says this
+    platform does not claim to produce).
+    """
+    path = Path(warehouse_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Warehouse database not found: {path}")
+
+    computed_at = datetime.now(UTC).replace(tzinfo=None)
+    with open_warehouse(path, read_only=False) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables"
+            ).fetchall()
+        }
+        for required in (_PRICES_TABLE, _QUARTERLY_METRICS_TABLE):
+            if required not in tables:
+                raise FileNotFoundError(
+                    f"{required} not found; run prices-build and "
+                    "metrics-quarterly-build first."
+                )
+
+        # One as-of join, done in SQL so the "latest close at or before the
+        # period end" rule is expressed once and cannot drift between rows.
+        rows = conn.execute(
+            f"""
+            WITH year_end AS (
+              SELECT ticker, year AS fiscal_year, period_end_date, publish_date
+              FROM fundamentals_quarterly
+              WHERE quarter = {FISCAL_YEAR_END_QUARTER}
+                AND period_end_date IS NOT NULL
+            ),
+            eps AS (
+              SELECT ticker, year AS fiscal_year, value AS net_income_ttm
+              FROM {_QUARTERLY_METRICS_TABLE}
+              WHERE metric_id = '{_EARNINGS_METRIC_ID}'
+                AND quarter = {FISCAL_YEAR_END_QUARTER}
+            ),
+            anchored AS (
+              SELECT
+                y.ticker, y.fiscal_year, y.period_end_date, y.publish_date,
+                (SELECT p.date FROM {_PRICES_TABLE} p
+                  WHERE p.ticker = y.ticker AND p.date <= y.period_end_date
+                    AND p.date >= y.period_end_date - {MAX_PRICE_LOOKBACK_DAYS}
+                  ORDER BY p.date DESC LIMIT 1) AS price_date
+              FROM year_end y
+            )
+            SELECT
+              a.ticker, a.fiscal_year, a.period_end_date, a.publish_date,
+              a.price_date,
+              date_diff('day', a.price_date, a.period_end_date) AS price_lag_days,
+              p.close, p.shares_outstanding, e.net_income_ttm
+            FROM anchored a
+            LEFT JOIN {_PRICES_TABLE} p
+              ON p.ticker = a.ticker AND p.date = a.price_date
+            LEFT JOIN eps e
+              ON e.ticker = a.ticker AND e.fiscal_year = a.fiscal_year
+            ORDER BY a.ticker, a.fiscal_year
+            """
+        ).fetchall()
+
+        built: list[dict] = []
+        for (
+            ticker,
+            fiscal_year,
+            period_end_date,
+            publish_date,
+            price_date,
+            price_lag_days,
+            close,
+            shares,
+            net_income_ttm,
+        ) in rows:
+            result = value(
+                ValuationInputs(
+                    close=close, shares_outstanding=shares, net_income_ttm=net_income_ttm
+                )
+            )
+            built.append(
+                {
+                    "ticker": ticker,
+                    "fiscal_year": fiscal_year,
+                    "period_end_date": period_end_date,
+                    "publish_date": publish_date,
+                    "price_date": price_date,
+                    "price_lag_days": price_lag_days,
+                    "close": close,
+                    "shares_outstanding": shares,
+                    "market_cap": result.market_cap,
+                    "net_income_ttm": result.net_income_ttm,
+                    "pe_ttm": result.pe_ttm,
+                    "earnings_yield": result.earnings_yield,
+                    "reason_code": result.reason_code,
+                    "quality_flag": result.pe_reason_code,
+                    "computed_at": computed_at,
+                    "pipeline_version": pipeline_version,
+                }
+            )
+
+        frame = pd.DataFrame(built, columns=list(VALUATION_HISTORY_COLUMNS))
+        _replace_table(
+            conn,
+            _VALUATION_HISTORY_TABLE,
+            create_valuation_history_ddl(),
+            VALUATION_HISTORY_COLUMNS,
+            frame,
+        )
+
+    priced = frame[frame["market_cap"].notna()] if not frame.empty else frame
+    return {
+        "valuation_history_rows": int(len(frame)),
+        "with_market_cap": int(len(priced)),
+        "with_pe_ttm": int(frame["pe_ttm"].notna().sum()) if not frame.empty else 0,
+        "fiscal_years": sorted(frame["fiscal_year"].unique().tolist())
+        if not frame.empty
+        else [],
+        "median_price_lag_days": float(priced["price_lag_days"].median())
+        if not priced.empty
+        else None,
+        "max_price_lag_days": int(priced["price_lag_days"].max())
+        if not priced.empty
+        else None,
     }

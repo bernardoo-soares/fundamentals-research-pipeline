@@ -64,3 +64,93 @@ def test_gate_does_not_mutate_the_input_frame():
 def test_missing_columns_are_skipped():
     result = apply_non_negative_gate(pd.DataFrame({"ticker": ["A"], "year": [2023], "quarter": [4]}))
     assert result.nulled_count == 0
+
+
+def test_share_scale_gate_nulls_a_basic_count_that_lost_its_scale() -> None:
+    """The MCD FY2024 defect, pinned.
+
+    SimFin published `Shares (Basic)` as 718 against a diluted 722,000,000 for
+    two quarters of one fiscal year, having read 722,000,000 for the other two.
+    Carried through it made derived EPS 2,809,192 per share and a trailing P/E
+    of 0.0, putting McDonald's at the top of a cheapest-stock screen.
+    """
+    from fundamentals_pipeline.warehouse.plausibility import apply_share_scale_gate
+
+    frame = pd.DataFrame(
+        [
+            {"ticker": "MCD", "year": 2024, "quarter": 2,
+             "cshoq": 722_000_000.0, "cshfdq": 726_000_000.0},
+            {"ticker": "MCD", "year": 2024, "quarter": 4,
+             "cshoq": 718.0, "cshfdq": 722_000_000.0},
+        ]
+    )
+    result = apply_share_scale_gate(frame)
+
+    assert result.nulled_count == 1
+    assert pd.isna(result.frame.loc[1, "cshoq"])
+    # The good quarter is untouched, and the diluted count survives both.
+    assert result.frame.loc[0, "cshoq"] == 722_000_000.0
+    assert result.frame["cshfdq"].notna().all()
+    assert result.violations.loc[0, "rule"] == "share_count_scale"
+
+
+def test_share_scale_gate_leaves_ordinary_dilution_alone() -> None:
+    """Real dilution is a few percent; the gate must not touch it."""
+    from fundamentals_pipeline.warehouse.plausibility import apply_share_scale_gate
+
+    frame = pd.DataFrame(
+        [{"ticker": "AAPL", "year": 2024, "quarter": 4,
+          "cshoq": 15_171_990_000.0, "cshfdq": 15_242_860_000.0}]
+    )
+    result = apply_share_scale_gate(frame)
+
+    assert result.nulled_count == 0
+    assert result.frame["cshoq"].notna().all()
+
+
+def test_share_scale_gate_ignores_a_missing_counterpart() -> None:
+    """A coverage gap is not a scale defect and must not be nulled."""
+    from fundamentals_pipeline.warehouse.plausibility import apply_share_scale_gate
+
+    frame = pd.DataFrame(
+        [{"ticker": "X", "year": 2024, "quarter": 4, "cshoq": 100.0, "cshfdq": None}]
+    )
+    result = apply_share_scale_gate(frame)
+
+    assert result.nulled_count == 0
+    assert result.frame.loc[0, "cshoq"] == 100.0
+
+
+def test_share_scale_gate_also_nulls_the_derived_eps_it_poisoned() -> None:
+    """SimFin epspxq is Net Income / Shares (Basic) -- the rejected field.
+
+    Nulling only the share count would leave a per-share figure six orders of
+    magnitude wrong in place, which is what put MCD atop a cheapest-stock
+    screen at a P/E of 0.0.
+    """
+    from fundamentals_pipeline.warehouse.plausibility import apply_share_scale_gate
+
+    frame = pd.DataFrame(
+        [{"ticker": "MCD", "year": 2024, "quarter": 4, "cshoq": 718.0,
+          "cshfdq": 722_000_000.0, "epspxq": 2_809_192.2, "source_era": "simfin"}]
+    )
+    result = apply_share_scale_gate(frame)
+
+    assert pd.isna(result.frame.loc[0, "cshoq"])
+    assert pd.isna(result.frame.loc[0, "epspxq"])
+    assert set(result.violations["field_name"]) == {"cshoq", "epspxq"}
+
+
+def test_share_scale_gate_leaves_legacy_as_reported_eps_alone() -> None:
+    """Legacy epspxq is as-reported, not a function of cshoq."""
+    from fundamentals_pipeline.warehouse.plausibility import apply_share_scale_gate
+
+    frame = pd.DataFrame(
+        [{"ticker": "X", "year": 2019, "quarter": 4, "cshoq": 1.0,
+          "cshfdq": 1_000_000.0, "epspxq": 3.25,
+          "source_era": "legacy_compustat"}]
+    )
+    result = apply_share_scale_gate(frame)
+
+    assert pd.isna(result.frame.loc[0, "cshoq"])
+    assert result.frame.loc[0, "epspxq"] == 3.25
