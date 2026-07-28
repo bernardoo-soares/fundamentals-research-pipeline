@@ -27,6 +27,7 @@ def test_registry_has_every_declared_quarterly_metric() -> None:
         "lt_debt_payback_years",
         "interest_pct_operating_income",
         "treasury_stock_present",
+        "eps_ttm",  # consumed by the valuation layer (SP5)
         # gross-profit family; era-dispatched arithmetic, both eras
         "gross_margin",
         "sga_pct_gross_profit",

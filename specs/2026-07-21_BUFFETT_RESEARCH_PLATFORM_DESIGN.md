@@ -546,6 +546,19 @@ Clicking any score opens its full anatomy; **every number is a door**:
 
 ## 9. Prices (part of sub-project 6)
 
+> **SUPERSEDED 2026-07-28 — the source is SimFin, not Stooq.** Measured that
+> day, every Stooq CSV endpoint (`.com` and `.pl`, with and without browser
+> headers) returns a JavaScript proof-of-work anti-bot challenge instead of CSV,
+> so D6's "free EOD CSV, no API key" premise no longer holds. The challenge was
+> deliberately **not** circumvented. SimFin's `us-shareprices-daily` replaces it
+> and adds **no new dependency**: one bulk download instead of ~500 throttled
+> per-ticker requests (so items 2 and 3 below are moot), and it carries
+> `Adj. Close` and `Dividend`, which Stooq does not — keeping the deferred
+> total-return work open rather than foreclosing it. Cost, disclosed: history
+> starts **2020-08-31**, so valuation cannot predate FY2020. Full record in
+> `specs/2026-07-28_PRICES_AND_VALUATION_DESIGN.md`. Items 1–4 are retained
+> below as originally written.
+
 1. Source: **Stooq** EOD CSV endpoints (free, no key). Tickers mapped
    (e.g. `AAPL` → `aapl.us`); benchmark `^SPX`.
 2. Ingestion: incremental (fetch since last stored date); throttled ≥ 500 ms
@@ -687,7 +700,7 @@ stored, versioned, auditable metric or score*.
 | SP2 | Warehouse foundation (native DuckDB store) | DONE (PR #4) |
 | SP3 | Stage 2 metrics engine | **DONE 2026-07-26** (PRs #5, #8, #12, #13) — 28 metrics; `market_cap`/`pe_ttm`/`earnings_yield` moved to SP5 by price dependency |
 | SP4 | Stage 3 scoring (BuffettHeuristicScorer; component + composite scores) | deferred |
-| SP5 | Prices (Stooq EOD) + valuation & volatility | deferred |
+| SP5 | Prices (SimFin daily) + valuation | **DONE 2026-07-28** — source changed from Stooq (D6 superseded); `market_cap`/`pe_ttm`/`earnings_yield` shipped |
 | SP6 | Streamlit UI (dashboard, rankings, smart search, score drilldown) | deferred |
 | SP7 | Portfolio module (holdings + contributions + vs-benchmark) | deferred (NEW) |
 | SP8 | Refresh (scheduled task + UI-triggered button) | deferred |

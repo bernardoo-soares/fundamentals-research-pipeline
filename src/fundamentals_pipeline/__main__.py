@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .connectors.simfin_price_loader import SimfinPriceConnector
 from .contracts.era_resolution import (
     LEGACY_STAGING_DIRNAME,
     SIMFIN_STAGING_DIRNAME,
@@ -14,6 +15,7 @@ from .core.logging import configure_logging, get_logger
 from .core.settings import get_settings
 from .metrics.builder import build_metrics_trend
 from .metrics.quarterly_builder import build_metrics_quarterly
+from .prices.builder import build_prices_daily, build_valuation_current
 from .scoring.builder import build_scores
 from .steps.cross_era_semantic_audit import run_cross_era_audit_from_dirs
 from .steps.legacy_processed_fundamentals_builder import (
@@ -266,6 +268,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "--config-path",
         default=None,
         help="Scorecard YAML; defaults to the packaged buffett_scorecard.yml.",
+    )
+
+    prices_parser = subparsers.add_parser(
+        "prices-build",
+        help="Ingest SimFin daily share prices into the prices_daily table.",
+    )
+    prices_parser.add_argument(
+        "--warehouse-path",
+        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+    )
+    prices_parser.add_argument(
+        "--simfin-cache-dir", default=str(settings.simfin_data_dir)
+    )
+
+    valuation_parser = subparsers.add_parser(
+        "valuation-build",
+        help="Compute market_cap / pe_ttm / earnings_yield into valuation_current.",
+    )
+    valuation_parser.add_argument(
+        "--warehouse-path",
+        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
     )
 
     extension_audit_parser = subparsers.add_parser(
@@ -776,6 +799,25 @@ def main() -> None:
             warehouse_path=args.warehouse_path, config_path=args.config_path
         )
         LOG.info("Scores build completed: %s", result)
+        for key, value in result.items():
+            print(f"{key}={value}")
+        return
+
+    if args.command == "prices-build":
+        LOG.info("Running prices build: warehouse_path=%s", args.warehouse_path)
+        connector = SimfinPriceConnector(data_dir=args.simfin_cache_dir)
+        result = build_prices_daily(
+            warehouse_path=args.warehouse_path, price_frame=connector.load()
+        )
+        LOG.info("Prices build completed: %s", result)
+        for key, value in result.items():
+            print(f"{key}={value}")
+        return
+
+    if args.command == "valuation-build":
+        LOG.info("Running valuation build: warehouse_path=%s", args.warehouse_path)
+        result = build_valuation_current(warehouse_path=args.warehouse_path)
+        LOG.info("Valuation build completed: %s", result)
         for key, value in result.items():
             print(f"{key}={value}")
         return

@@ -445,6 +445,31 @@ def ttm_over_gross_profit(field: str) -> ComputeFn:
     return _compute
 
 
+def ttm_sum(field: str) -> ComputeFn:
+    """The plain TTM sum of one flow field.
+
+    Used for `eps_ttm`, which the valuation layer consumes. Kept here, pure and
+    price-free, so the scoring layer's "never touches prices" guarantee is
+    unaffected by valuation existing at all.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[QuarterPoint]:
+        prepared = _prepare(frame)
+        totals = ttm_flow(prepared, field)
+
+        def value_for(as_of: int):
+            total = totals.get(as_of)
+            if total is None:
+                return None, ReasonCode.MISSING_INPUT, None
+            if total.mixed_non_equivalent:
+                return None, ReasonCode.MIXED_ERA_WINDOW, None
+            return total.total, None, None
+
+        return _points_over_frame(prepared, value_for)
+
+    return _compute
+
+
 def presence_flag(field: str, *, threshold: float) -> ComputeFn:
     """1.0 if the latest value > threshold, else 0.0; null if the value absent."""
 

@@ -28,7 +28,7 @@ def _aapl_rows():
          "atq": 352583.0, "ceqq": 62146.0, "ltq": 290437.0, "tstkq": None,
          "dlcq": None, "dlttq": None, "xintq": None, "oiadpq": None,
          "actq": None, "lctq": None, "cogsq": None, "dpq": None,
-         "xsgaq": None, "xrdq": None, "source_era": "simfin"}
+         "xsgaq": None, "xrdq": None, "epspxq": None, "source_era": "simfin"}
         for (y, q, s, n) in data
     ]
 
@@ -74,7 +74,7 @@ def test_builder_applies_era_restriction(tmp_path):
          "saleq": None, "niq": None, "atq": None, "ceqq": None, "ltq": None,
          "cogsq": None, "dpq": None, "xsgaq": None, "xrdq": None,
          "tstkq": None, "dlcq": None, "dlttq": None, "actq": None,
-         "lctq": None, "source_era": str(SourceEra.LEGACY)}
+         "lctq": None, "epspxq": None, "source_era": str(SourceEra.LEGACY)}
         for q, x, o in [(1, 245.0, 2560.0), (2, 236.0, 3080.0),
                         (3, 230.0, 2623.0), (4, 235.0, 2278.0)]
     ]
@@ -83,7 +83,7 @@ def test_builder_applies_era_restriction(tmp_path):
          "oiadpq": 500.0, "saleq": None, "niq": None, "atq": None,
          "cogsq": None, "dpq": None, "xsgaq": None, "xrdq": None,
          "ceqq": None, "ltq": None, "tstkq": None, "dlcq": None,
-         "dlttq": None, "actq": None, "lctq": None,
+         "dlttq": None, "actq": None, "lctq": None, "epspxq": None,
          "source_era": str(SourceEra.SIMFIN)}
         for q in (1, 2, 3, 4)
     ]

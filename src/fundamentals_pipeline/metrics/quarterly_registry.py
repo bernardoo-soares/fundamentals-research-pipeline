@@ -18,6 +18,7 @@ from .quarterly import (
     ttm_over_gross_profit,
     ttm_over_stock,
     ttm_ratio,
+    ttm_sum,
 )
 
 TREASURY_PRESENCE_THRESHOLD = 0.0
@@ -82,6 +83,19 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "with era_not_supported rather than false.)",
         ttm_ratio("xintq", "oiadpq"),
         supported_eras=_LEGACY_ONLY,
+    ),
+    QuarterMetric(
+        "eps_ttm",
+        "1",
+        "sum of the 4 most recent quarterly epspxq. Documented approximation "
+        "(platform spec 6.1): it ignores intra-year share-count drift, which is "
+        "acceptable because EPS is used for trend, consistency and valuation "
+        "ratios rather than for per-share precision. epspxq is declared "
+        "non-equivalent across the provider boundary (SimFin publishes no EPS "
+        "column, so the SimFin-era value is derived from Net Income (Common) / "
+        "Shares (Basic)), so a window spanning the boundary is nulled "
+        "mixed_era_window by per-field purity.",
+        ttm_sum("epspxq"),
     ),
     QuarterMetric(
         "treasury_stock_present",
