@@ -645,8 +645,35 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
             "difference 0.0000)."
         ),
     ),
-    _equivalent_usd(
-        "tstkq", "tstkq", "Treasury Stock", "treasury stock", _STOCK
+    FieldEraSemantics(
+        field="tstkq",
+        legacy=_usd("tstkq", "Treasury Stock", _STOCK),
+        simfin=_usd("Treasury Stock", "treasury stock", _STOCK),
+        eras_equivalent=True,
+        min_agreement_rate=0.90,
+        threshold_justification=(
+            "Values agree where both providers report. The live issue is "
+            "COVERAGE, not semantics: SimFin omits the line for 147 of 353 "
+            "FY2023 Q4 tickers (41.6%), against Compustat's near-total "
+            "coverage. That drives tstk_unavailable on debt_to_equity_adj and "
+            "missing_input on treasury_stock_present, whose FY2024 coverage is "
+            "221 of 384."
+        ),
+        divergence_note=(
+            "DO NOT IMPUTE ZERO FOR A NULL. Tested 2026-07-28 because it is the "
+            "obvious way to lift treasury_stock_present's coverage, and it is "
+            "WRONG. Of the 147 FY2023 Q4 rows where SimFin reports no treasury "
+            "stock, Compustat reports exactly 0 for 95.9% -- but 4.1% hold a "
+            "REAL position, median 7,728 (millions). Reading null as zero would "
+            "therefore assert 'this company holds no treasury stock' about "
+            "companies holding billions of it. "
+            "treasury_stock_present is a binary presence flag, so a wrong "
+            "answer is maximally wrong: it flips the criterion from pass to "
+            "fail outright rather than shifting it slightly. A 95.9% hit rate "
+            "is not good enough for a 0/1 claim about capital allocation, and "
+            "filling the gap is imputation regardless (S4.2). "
+            "missing_input is the correct outcome and must stay."
+        ),
     ),
     _equivalent_usd(
         "cheq",
@@ -712,12 +739,48 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         "operating cash flow",
         Basis.YEAR_TO_DATE,
     ),
-    _equivalent_usd(
-        "capxy",
-        "capxy",
-        "Change in Fixed Assets & Intangibles (annual)",
-        "capital expenditure",
-        Basis.YEAR_TO_DATE,
+    FieldEraSemantics(
+        field="capxy",
+        legacy=_usd("capxy", "Capital Expenditures", Basis.YEAR_TO_DATE),
+        simfin=_usd(
+            "Change in Fixed Assets & Intangibles (annual)",
+            "capital expenditure",
+            Basis.YEAR_TO_DATE,
+        ),
+        eras_equivalent=False,
+        divergence_note=(
+            "ROOT CAUSE FOUND 2026-07-28: the two providers measure GROSS vs NET "
+            "capital expenditure. Compustat capxy is gross spend on PP&E; "
+            "SimFin's 'Change in Fixed Assets & Intangibles' is a NET change -- "
+            "purchases less disposals, and it also spans intangibles. "
+            "The decisive evidence is the sign: after the builder's outflow "
+            "negation, SimFin capxy comes out NEGATIVE for disposal-heavy "
+            "filers, which a gross spend figure can never be. FY2023 Q4: PEP "
+            "legacy 5,518 vs SimFin -198; DE 4,468 vs -483; URI (equipment "
+            "rental, so large fleet disposals) 4,070 vs -1,278; GS 2,316 vs "
+            "-962; SPGI 143 vs -871. "
+            "Measured at Q4 -- the only quarter the annual layer reads, and the "
+            "only one where a year-to-date field and SimFin's repeated annual "
+            "figure denote the same quantity -- agreement is 0.551 at 1% with "
+            "46.0% matching EXACTLY and a long one-sided tail (p90 signed "
+            "relative difference +0.338, legacy above SimFin for 86.8%). That "
+            "shape is a scope difference on the subset with material disposals, "
+            "not noise: filers with no disposals agree to the cent. "
+            "SEPARATELY MEASURED AND EXCLUDED as a cause: the year-to-date basis "
+            "mismatch. SimFin repeats the full-year figure on all four quarters "
+            "(100.0% of 366 ticker-years constant across Q1-Q4) while Compustat "
+            "accumulates (99.1% monotonic). AAPL FY2023 legacy runs 3,787 / "
+            "6,703 / 8,796 / 10,959 against SimFin's flat 10,959. The audit "
+            "already restricts YEAR_TO_DATE fields to Q4, so this is NOT what "
+            "the 0.551 measures -- it is fully handled. "
+            "CONSEQUENCE: the guard on capex_pct_net_income_avg10y is CORRECT "
+            "and must stay. Gross and net capex are different quantities, and a "
+            "10-year average mixing them would be a false number. The metric is "
+            "therefore unavailable from FY2023 onward (every 10-year window "
+            "spans the boundary) and stays so until FY2032 unless a gross-capex "
+            "source is added. That is a real, permanent capability loss on the "
+            "capital_allocation component, stated rather than papered over."
+        ),
     ),
     FieldEraSemantics(
         field="dvy",

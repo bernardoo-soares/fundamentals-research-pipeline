@@ -10,6 +10,7 @@ future MLScorer over the same tables inherits the same no-leakage guarantee
 
 from __future__ import annotations
 
+from ..contracts.metric_reason_codes import ERA_STRUCTURAL_REASON_CODES
 from ..contracts.scorecard_schema import (
     ChecklistVerdict,
     ComponentResult,
@@ -124,7 +125,26 @@ def _score_component(
     """
     total = len(component.criteria)
     applicable = [result for result in results if result.applicable]
-    coverage = len(applicable) / total if total else 0.0
+    era_unavailable = sum(
+        1 for result in results if result.reason_code in ERA_STRUCTURAL_REASON_CODES
+    )
+    measurable = total - era_unavailable
+    coverage = len(applicable) / measurable if measurable else 0.0
+
+    if not measurable:
+        return (
+            ComponentResult(
+                component_id=component.component_id,
+                score=None,
+                weight=None,
+                coverage_ratio=coverage,
+                applicable_criteria=0,
+                total_criteria=total,
+                reason_code=ScoreReasonCode.ALL_CRITERIA_ERA_UNAVAILABLE,
+                era_unavailable_criteria=era_unavailable,
+            ),
+            results,
+        )
 
     if not applicable:
         return (
@@ -136,6 +156,7 @@ def _score_component(
                 applicable_criteria=0,
                 total_criteria=total,
                 reason_code=ScoreReasonCode.NO_APPLICABLE_CRITERION,
+                era_unavailable_criteria=era_unavailable,
             ),
             results,
         )
@@ -150,6 +171,7 @@ def _score_component(
                 applicable_criteria=len(applicable),
                 total_criteria=total,
                 reason_code=ScoreReasonCode.COMPONENT_COVERAGE_BELOW_FLOOR,
+                era_unavailable_criteria=era_unavailable,
             ),
             results,
         )
@@ -184,6 +206,7 @@ def _score_component(
             coverage_ratio=coverage,
             applicable_criteria=len(applicable),
             total_criteria=total,
+            era_unavailable_criteria=era_unavailable,
         ),
         weighted,
     )
@@ -266,6 +289,7 @@ class BuffettHeuristicScorer:
                     applicable_criteria=result.applicable_criteria,
                     total_criteria=result.total_criteria,
                     reason_code=result.reason_code,
+                    era_unavailable_criteria=result.era_unavailable_criteria,
                 )
             )
 
@@ -285,10 +309,22 @@ class BuffettHeuristicScorer:
 
     @staticmethod
     def _coverage_ratio(criteria: list[CriterionResult]) -> float:
-        """Applicable criteria over total, across the whole scorecard."""
-        if not criteria:
+        """Applicable criteria over MEASURABLE criteria, across the scorecard.
+
+        Era-guarded criteria leave the denominator for the same reason they do
+        at component level: they are absent for every company in the era, so
+        counting them would report a company-specific gap that does not exist.
+        The `era_limited` badge, not this ratio, is what tells the user the
+        scorecard answered a narrower question.
+        """
+        measurable = [
+            result
+            for result in criteria
+            if result.reason_code not in ERA_STRUCTURAL_REASON_CODES
+        ]
+        if not measurable:
             return 0.0
-        return sum(1 for result in criteria if result.applicable) / len(criteria)
+        return sum(1 for result in measurable if result.applicable) / len(measurable)
 
     @staticmethod
     def _checklist_passed(criteria: list[CriterionResult]) -> int:
@@ -324,4 +360,8 @@ class BuffettHeuristicScorer:
             badges.append(ScoreBadge.STALE_DATA)
         if any(result.quality_flag for result in criteria if result.applicable):
             badges.append(ScoreBadge.UNRELIABLE_INPUT)
+        if any(
+            result.reason_code in ERA_STRUCTURAL_REASON_CODES for result in criteria
+        ):
+            badges.append(ScoreBadge.ERA_LIMITED)
         return tuple(badges)

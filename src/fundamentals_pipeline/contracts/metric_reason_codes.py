@@ -57,3 +57,12 @@ def validate_value_xor_reason(
         raise ValueError("Exactly one of value / reason_code must be set.")
     if reason_code is not None and reason_code not in REASON_CODES:
         raise ValueError(f"Unknown reason_code: {reason_code!r}")
+
+
+# Reason codes that mean "this measurement does not exist in this provider era",
+# as opposed to "this company is missing data". The distinction matters at the
+# score grain: an era-guarded criterion is absent for EVERY company in the era,
+# so counting it as a per-company gap blames the company for a provider gap.
+ERA_STRUCTURAL_REASON_CODES: frozenset[str] = frozenset(
+    {ReasonCode.ERA_NOT_SUPPORTED, ReasonCode.MIXED_ERA_WINDOW}
+)

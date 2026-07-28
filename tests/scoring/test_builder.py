@@ -447,3 +447,77 @@ def test_scorer_and_config_path_together_are_rejected(tmp_path) -> None:
             scorer=BuffettHeuristicScorer(load_scorecard_config()),
             config_path="anything.yml",
         )
+
+
+def test_era_guarded_criterion_leaves_the_coverage_denominator(tmp_path) -> None:
+    """A criterion absent for EVERY company must not read as a company gap.
+
+    `mixed_era_window` and `era_not_supported` mean the measurement does not
+    exist in this provider era. Counting them as per-company gaps blames the
+    company for a provider limitation and can push a component below the
+    coverage floor for a reason that has nothing to do with it.
+    """
+    db = tmp_path / "research.duckdb"
+    # capex is era-guarded; the other three capital_allocation criteria are fine.
+    trend = dict(_TREND_VALUES)
+    trend["capex_pct_net_income_avg10y"] = None
+    _seed(db, trend=trend, quarterly=_QUARTERLY_VALUES)
+    conn = duckdb.connect(str(db))
+    conn.execute(
+        "UPDATE metrics_trend SET reason_code='mixed_era_window' "
+        "WHERE metric_id='capex_pct_net_income_avg10y'"
+    )
+    conn.close()
+
+    build_scores(warehouse_path=db)
+
+    row = _fetch(
+        db,
+        "SELECT coverage_ratio, applicable_criteria, total_criteria, "
+        "era_unavailable_criteria FROM score_components "
+        "WHERE component_id='capital_allocation'",
+    )[0]
+    coverage, applicable, total, era_out = row
+    assert (total, era_out, applicable) == (4, 1, 3)
+    # 3 of 3 measurable, not 3 of 4.
+    assert coverage == pytest.approx(1.0)
+
+
+def test_era_guarded_criterion_raises_the_era_limited_badge(tmp_path) -> None:
+    """Removing it from the denominator must not make the limit invisible."""
+    db = tmp_path / "research.duckdb"
+    trend = dict(_TREND_VALUES)
+    trend["capex_pct_net_income_avg10y"] = None
+    _seed(db, trend=trend, quarterly=_QUARTERLY_VALUES)
+    conn = duckdb.connect(str(db))
+    conn.execute(
+        "UPDATE metrics_trend SET reason_code='mixed_era_window' "
+        "WHERE metric_id='capex_pct_net_income_avg10y'"
+    )
+    conn.close()
+
+    result = build_scores(warehouse_path=db)
+
+    badges = _fetch(db, "SELECT badges FROM scores")[0][0]
+    assert ScoreBadge.ERA_LIMITED.value in badges
+    assert result["badge_counts"].get(ScoreBadge.ERA_LIMITED.value) == 1
+
+
+def test_a_company_specific_gap_still_counts_against_coverage(tmp_path) -> None:
+    """The control: an ordinary missing input must still lower coverage."""
+    db = tmp_path / "research.duckdb"
+    trend = dict(_TREND_VALUES)
+    trend["capex_pct_net_income_avg10y"] = None  # reason defaults to insufficient_history
+    _seed(db, trend=trend, quarterly=_QUARTERLY_VALUES)
+
+    build_scores(warehouse_path=db)
+
+    coverage, era_out = _fetch(
+        db,
+        "SELECT coverage_ratio, era_unavailable_criteria FROM score_components "
+        "WHERE component_id='capital_allocation'",
+    )[0]
+    assert era_out == 0
+    assert coverage == pytest.approx(0.75)
+    badges = _fetch(db, "SELECT badges FROM scores")[0][0]
+    assert ScoreBadge.ERA_LIMITED.value not in badges

@@ -60,6 +60,9 @@ class ScoreReasonCode(StrEnum):
     NO_APPLICABLE_COMPONENT = "no_applicable_component"
     COMPONENT_COVERAGE_BELOW_FLOOR = "component_coverage_below_floor"
     NO_APPLICABLE_CRITERION = "no_applicable_criterion"
+    # Every criterion in the component is era-guarded, so the component is not
+    # measurable in this provider era for ANY company.
+    ALL_CRITERIA_ERA_UNAVAILABLE = "all_criteria_era_unavailable"
 
 
 class ScoreBadge(StrEnum):
@@ -72,6 +75,9 @@ class ScoreBadge(StrEnum):
     # directive: anything not fully reliable must be flagged to the UI, and a
     # caveat that lives only in a spec or a docstring does not satisfy that.
     UNRELIABLE_INPUT = "unreliable_input"
+    # At least one criterion could not be measured in this provider era at all.
+    # The score is over a NARROWER question than the scorecard nominally asks.
+    ERA_LIMITED = "era_limited"
 
 
 @dataclass(frozen=True)
@@ -145,10 +151,22 @@ class ComponentResult:
     component_id: str
     score: float | None
     weight: float | None
+    # Applicable over MEASURABLE criteria -- era-guarded ones are excluded from
+    # the denominator, because they are absent for every company in the era and
+    # counting them would penalise each company for a provider limitation.
     coverage_ratio: float
     applicable_criteria: int
     total_criteria: int
     reason_code: str | None = None
+    # Criteria that could not be measured in this era at all. Published so the
+    # UI can say "3 of 3 measurable, 1 unavailable this era" rather than the
+    # indistinguishable "3 of 4".
+    era_unavailable_criteria: int = 0
+
+    @property
+    def measurable_criteria(self) -> int:
+        """Criteria that could have been measured for this era."""
+        return self.total_criteria - self.era_unavailable_criteria
 
 
 @dataclass(frozen=True)
@@ -241,6 +259,7 @@ SCORE_COMPONENTS_COLUMNS: tuple[str, ...] = (
     "coverage_ratio",
     "applicable_criteria",
     "total_criteria",
+    "era_unavailable_criteria",
     "reason_code",
     "computed_at",
     "pipeline_version",
@@ -295,6 +314,7 @@ def create_score_components_ddl() -> str:
         "  coverage_ratio DOUBLE,\n"
         "  applicable_criteria INTEGER,\n"
         "  total_criteria INTEGER,\n"
+        "  era_unavailable_criteria INTEGER,\n"
         "  reason_code VARCHAR,\n"
         "  computed_at TIMESTAMP,\n"
         "  pipeline_version VARCHAR,\n"

@@ -310,3 +310,26 @@ def test_saleq_justification_does_not_make_the_refuted_pooled_claim():
     assert "CORRECTED 2026-07-26" in justification
     assert "0.5328" in justification, "must record the measured banks median"
     assert "nulled for the banks family" in justification
+
+
+def test_simfin_null_treasury_stock_must_not_be_read_as_zero() -> None:
+    """Pin the measurement that makes the obvious 'fix' wrong.
+
+    Lifting `treasury_stock_present` coverage by treating a null `tstkq` as 0 is
+    the natural next idea, and it is wrong: of the 147 FY2023 Q4 rows where
+    SimFin omits the line, Compustat reports exactly 0 for 95.9% but a REAL
+    position for 4.1% (median 7,728). On a binary presence flag a wrong answer
+    flips the verdict outright. This test exists so the reasoning is discovered
+    before the change, not after.
+    """
+    note = semantics_for("tstkq").divergence_note or ""
+    assert "DO NOT IMPUTE ZERO" in note
+    assert "4.1%" in note
+
+
+def test_capxy_is_declared_non_equivalent_with_its_root_cause() -> None:
+    """Gross vs net capex is a scope difference, so the era guard must stay."""
+    semantics = semantics_for("capxy")
+    assert semantics.eras_equivalent is False
+    note = semantics.divergence_note or ""
+    assert "GROSS vs NET" in note

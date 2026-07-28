@@ -164,6 +164,7 @@ def _score_rows(
             "coverage_ratio": component.coverage_ratio,
             "applicable_criteria": component.applicable_criteria,
             "total_criteria": component.total_criteria,
+            "era_unavailable_criteria": component.era_unavailable_criteria,
             "reason_code": component.reason_code,
             **provenance,
         }
