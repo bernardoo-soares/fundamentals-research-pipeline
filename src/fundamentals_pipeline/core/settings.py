@@ -97,6 +97,7 @@ class AppSettings:
     reports_data_dir: Path
     legacy_fundamentals_dir: Path
     simfin_data_dir: Path
+    yahoo_cache_dir: Path
     # The DuckDB file every derived layer is built into and the console reads.
     # Declared here rather than repeated as a default in each CLI command, so
     # relocating it is a one-line change (AGENTS.md S1.4, S2.6).
@@ -139,6 +140,12 @@ def get_settings() -> AppSettings:
     warehouse_path = Path(
         os.getenv("WAREHOUSE_PATH", str(data_root / "warehouse" / "research.duckdb"))
     )
+    yahoo_cache_dir = Path(
+        os.getenv(
+            "YAHOO_CACHE_DIR",
+            str(data_root / "raw" / "vendor" / "yahoo_cache"),
+        )
+    )
 
     return AppSettings(
         wiki_url=os.getenv(
@@ -164,6 +171,7 @@ def get_settings() -> AppSettings:
         reports_data_dir=reports_data_dir,
         legacy_fundamentals_dir=legacy_fundamentals_dir,
         simfin_data_dir=simfin_data_dir,
+        yahoo_cache_dir=yahoo_cache_dir,
         warehouse_path=warehouse_path,
         simfin_api_key=os.getenv("SIMFIN_API_KEY"),
         universe_filename=os.getenv("UNIVERSE_FILENAME", "universe_current.csv"),

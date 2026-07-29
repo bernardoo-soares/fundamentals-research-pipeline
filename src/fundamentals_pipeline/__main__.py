@@ -41,8 +41,8 @@ from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
 from .steps.sp500_universe_builder import build_sp500_current_universe
 from .steps.stage1_era_resolution import resolve_stage1_era
 from .steps.stage1_extension_coverage_audit import run_stage1_extension_coverage_audit
-from .warehouse.benchmark_builder import build_benchmark
 from .warehouse.companies_builder import build_companies
+from .warehouse.market_history_builder import build_market_history
 from .warehouse.rebuild import rebuild_warehouse
 
 LOG = get_logger(__name__)
@@ -302,17 +302,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Also value each fiscal year end into valuation_history.",
     )
 
-    benchmark_parser = subparsers.add_parser(
-        "benchmark-build",
+    market_parser = subparsers.add_parser(
+        "market-history-build",
         help=(
-            "Load the market benchmark series (SPY, standing in for ^SPX) "
-            "into benchmark_daily."
+            "Fetch long-run daily closes for the S&P 500 index (^GSPC) and "
+            "every scored ticker from Yahoo Finance into market_history."
         ),
     )
-    benchmark_parser.add_argument(
+    market_parser.add_argument(
         "--warehouse-path",
         default=str(settings.warehouse_path),
     )
+    market_parser.add_argument(
+        "--cache-dir",
+        default=str(settings.yahoo_cache_dir),
+        help="Where raw Yahoo responses are cached, for reproducibility.",
+    )
+    market_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Refetch from Yahoo instead of reading the cache.",
+    )
+
 
     companies_parser = subparsers.add_parser(
         "companies-build",
@@ -849,13 +860,22 @@ def main() -> None:
             print(f"{key}={value}")
         return
 
-    if args.command == "benchmark-build":
-        LOG.info("Running benchmark build: warehouse_path=%s", args.warehouse_path)
-        result = build_benchmark(warehouse_path=args.warehouse_path)
-        LOG.info("Benchmark build completed: %s", result)
+    if args.command == "market-history-build":
+        LOG.info(
+            "Running market history build: warehouse_path=%s cache_dir=%s",
+            args.warehouse_path,
+            args.cache_dir,
+        )
+        result = build_market_history(
+            warehouse_path=args.warehouse_path,
+            cache_dir=args.cache_dir,
+            refresh=args.refresh,
+        )
+        LOG.info("Market history build completed: %s", result)
         for key, value in result.items():
             print(f"{key}={value}")
         return 0
+
 
     if args.command == "companies-build":
         LOG.info("Running companies build: warehouse_path=%s", args.warehouse_path)

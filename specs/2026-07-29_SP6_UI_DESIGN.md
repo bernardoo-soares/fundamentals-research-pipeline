@@ -424,3 +424,85 @@ table; writes raise a typed `AnnotationStoreBusy` that the page shows as a
 sentence, with nothing changed.
 
 Suite after these two pages: **659 tests**.
+
+## 13. Yahoo Finance: a real index and two decades of history
+
+Sections 11.1 and 11.2 recorded two limits as permanent. Both were limits of
+the *source*, not of the problem, and moving the comparison layer to Yahoo
+Finance removed them.
+
+| | Before (SimFin) | After (Yahoo) |
+|---|---|---|
+| Benchmark | SPY, an ETF standing in for `^SPX` | **`^GSPC`, the index itself** |
+| History | 2020-08-31 → 2025-08-01 (4.92y) | **2000-01-03 → 2026-07-28 (26.6y)** |
+| Windows offered | 1, 2, 3, 4 years | **1, 2, 3, 5, 10, 20 years** |
+| Universe covered | 476 of 494 | **493 of 494** |
+
+`benchmark_daily`, `benchmark_schema.py` and `benchmark_builder.py` are
+**deleted**, not left beside the new path: two benchmark tables is exactly the
+duplication S2.6 forbids. `prices_daily` stays, because valuation needs
+SimFin's contemporaneous share count and mixing two vendors' closes into one
+market-cap figure would be cross-source blending.
+
+### 13.1 No new dependency
+
+`requests` was already a dependency and the endpoint is one GET returning
+JSON, so a vendor SDK would add churn and supply-chain surface without
+removing complexity.
+
+Nothing here circumvents an access control — the contrast with the Stooq
+proof-of-work challenge, which this project declined to solve, is deliberate.
+It is still someone else's service: requests are serialised, throttled to 1/s,
+backed off on 429 with `Retry-After` honoured, and **cached to disk**. The
+cache also makes the build reproducible (S3.1), since Yahoo restates and
+backfills; `--refresh` is the explicit opt-in to refetch.
+
+### 13.2 Semantics verified before any transform was written (S4.1)
+
+- `close` is **split-adjusted**: NVDA runs 115.00 → 116.44 → 122.44 through
+  its 2024-06-10 ten-for-one split with no 10x step.
+- `close` is **not dividend-adjusted**: KO's `adjclose / close` is 0.930113.
+
+So `close` is exactly the right basis for a price-return comparison, and
+`adjclose` is deliberately unused.
+
+Validated against reality after loading: `^GSPC` reads **1455.22**
+(2000-01-03), **903.25** (2008-12-31), **2237.40** (2020-03-23, the COVID
+low) and **5881.63** (2024-12-31) — the actual index closes.
+
+### 13.3 Symbol mapping, measured across all 494 tickers
+
+491 resolve unchanged. One needs the class separator swapped (`BRK.B` →
+`BRK-B`) — a formatting difference in one symbol alphabet, not an alias. One
+is a **verified corporate rename**: `BK` → `BNY`, confirmed via Yahoo's search
+endpoint returning "The Bank of New York Mellon Corporation", EQUITY, NYQ,
+while `BK` itself 404s.
+
+`validate_renames` refuses any alias that changes only the share-class suffix,
+so nobody can later add `BRK.B → BRK-A` because it "resolves" — the trap
+`prices_schema.py` documents. A rename must also carry its evidence.
+
+`HOLX` resolves to nothing and its company name returns no match, so it is
+declared unresolved and named on screen rather than guessed at.
+
+### 13.4 The bug behind every apparent rate limit
+
+`requests.Session().headers` already contains `User-Agent:
+python-requests/x.y.z`, so `headers.setdefault("User-Agent", ...)` is a
+**silent no-op** — and Yahoo's edge answers that agent with 429. Hours of
+apparent rate limiting, a longer backoff schedule and a slower crawl were all
+chasing one wrong line. Direct probes passed throughout because they assigned
+the header explicitly. It is now assigned, with a test asserting the session
+does not carry the default agent.
+
+### 13.5 A log scale, because a linear one lies by omission
+
+Over 20 years a selection containing one large compounder crushes the
+benchmark into a flat line at zero: `^GSPC`'s +486.9% rendered as visually
+indistinguishable from no movement. The chart defaults to a log axis for
+windows of 3 years or more, where equal ratios occupy equal distance, and the
+toggle is exposed. The long-window caveat also gains a sentence: over a long
+window the look-ahead matters *more*, since the selection was made with
+fundamentals from the end of it.
+
+Suite after this change: **682 tests**.

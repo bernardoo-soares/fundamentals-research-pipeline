@@ -29,6 +29,10 @@ from ..contracts.stage1_fundamentals_schema import (
     EXTENDED_RAW_FIELDS,
     SUPPORT_RAW_FIELDS,
 )
+from ..contracts.yahoo_market_schema import (
+    BENCHMARK_ROLE,
+    CONSTITUENT_ROLE,
+)
 from ..portfolio.comparison import MAX_START_LOOKBACK_DAYS
 from .connection import open_warehouse
 
@@ -55,7 +59,8 @@ VALUATION_HISTORY_TABLE = "valuation_history"
 # Optional: names and GICS sectors. See `has_companies`.
 COMPANIES_TABLE = "companies"
 PRICES_DAILY_TABLE = "prices_daily"
-BENCHMARK_TABLE = "benchmark_daily"
+# Long-run Yahoo history: the real index plus constituents.
+MARKET_HISTORY_TABLE = "market_history"
 
 REQUIRED_TABLES: tuple[str, ...] = (
     SCORES_TABLE,
@@ -538,32 +543,30 @@ def trend_metric_series(
         ).fetchdf()
 
 
-def has_benchmark(warehouse_path: str | Path) -> bool:
-    """Whether the benchmark series has been built."""
+
+
+
+
+def has_market_history(warehouse_path: str | Path) -> bool:
+    """Whether the long-run Yahoo history has been built."""
     with _connect(warehouse_path) as conn:
         return bool(
             conn.execute(
                 "SELECT COUNT(*) FROM information_schema.tables "
                 "WHERE table_name = ?",
-                [BENCHMARK_TABLE],
+                [MARKET_HISTORY_TABLE],
             ).fetchone()[0]
         )
 
 
-def price_history(
+def market_price_history(
     warehouse_path: str | Path,
     *,
     tickers: tuple[str, ...],
     start: date,
     end: date,
 ) -> pd.DataFrame:
-    """Daily closes for a selection, long-form `(ticker, date, close)`.
-
-    A window's start look-back needs prices slightly BEFORE `start`, so the
-    query reaches back by `MAX_START_LOOKBACK_DAYS`; the comparison then does
-    the as-of selection. Widening the window here rather than there keeps the
-    look-back rule in one place.
-    """
+    """Constituent closes from the long-run history, `(ticker, date, close)`."""
     if not tickers:
         return pd.DataFrame(columns=["ticker", "date", "close"])
     placeholders = ", ".join("?" for _ in tickers)
@@ -572,44 +575,51 @@ def price_history(
         return conn.execute(
             f"""
             SELECT ticker, date, close
-            FROM {PRICES_DAILY_TABLE}
-            WHERE ticker IN ({placeholders})
-              AND date BETWEEN ? AND ?
-              AND close IS NOT NULL
+            FROM {MARKET_HISTORY_TABLE}
+            WHERE role = ? AND ticker IN ({placeholders})
+              AND date BETWEEN ? AND ? AND close IS NOT NULL
             ORDER BY ticker, date
             """,
-            [*tickers, reach, end],
+            [CONSTITUENT_ROLE, *tickers, reach, end],
         ).fetchdf()
 
 
-def benchmark_history(
+def market_benchmark_history(
     warehouse_path: str | Path, *, start: date, end: date
 ) -> pd.DataFrame:
-    """Daily benchmark closes, long-form `(date, close)`."""
-    if not has_benchmark(warehouse_path):
-        return pd.DataFrame(columns=["date", "close"])
+    """Index closes from the long-run history, `(date, close)`."""
     reach = start - timedelta(days=MAX_START_LOOKBACK_DAYS)
     with _connect(warehouse_path) as conn:
         return conn.execute(
             f"""
             SELECT date, close
-            FROM {BENCHMARK_TABLE}
-            WHERE date BETWEEN ? AND ? AND close IS NOT NULL
+            FROM {MARKET_HISTORY_TABLE}
+            WHERE role = ? AND date BETWEEN ? AND ? AND close IS NOT NULL
             ORDER BY date
             """,
-            [reach, end],
+            [BENCHMARK_ROLE, reach, end],
         ).fetchdf()
 
 
-def price_coverage(warehouse_path: str | Path) -> tuple[date, date] | None:
-    """The first and last date any price exists for, or None if unpriced."""
-    if not has_benchmark(warehouse_path):
-        return None
+def market_coverage(warehouse_path: str | Path) -> tuple[date, date] | None:
+    """First and last benchmark date in the long-run history."""
     with _connect(warehouse_path) as conn:
         row = conn.execute(
-            f"SELECT MIN(date), MAX(date) FROM {BENCHMARK_TABLE}"
+            f"SELECT MIN(date), MAX(date) FROM {MARKET_HISTORY_TABLE} "
+            "WHERE role = ?",
+            [BENCHMARK_ROLE],
         ).fetchone()
     return (row[0], row[1]) if row and row[0] else None
+
+
+def market_tickers(warehouse_path: str | Path) -> frozenset[str]:
+    """Which tickers have a long-run series, so gaps can be named."""
+    with _connect(warehouse_path) as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT ticker FROM {MARKET_HISTORY_TABLE} WHERE role = ?",
+            [CONSTITUENT_ROLE],
+        ).fetchall()
+    return frozenset(row[0] for row in rows)
 
 
 def metric_coverage(
