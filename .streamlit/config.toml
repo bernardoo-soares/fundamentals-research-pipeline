@@ -1,0 +1,21 @@
+# Streamlit's own theme, so the widgets it renders agree with the console's
+# palette instead of being overridden by brittle CSS aimed at BaseWeb's
+# internal DOM. Values mirror app/theme.py, which stays the source of truth for
+# everything the console draws itself.
+#
+# `primaryColor` is the assay gold: the rule is that gold means measured, and
+# a slider the reader moves to set a measurement threshold is exactly that.
+
+[theme]
+base = "light"
+primaryColor = "#A67C00"
+backgroundColor = "#F2F4F6"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#171A1F"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

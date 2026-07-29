@@ -192,7 +192,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     warehouse_parser.add_argument(
         "--warehouse-path",
-        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+        default=str(settings.warehouse_path),
     )
     warehouse_parser.add_argument(
         "--reports-dir",
@@ -248,7 +248,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     metrics_parser.add_argument(
         "--warehouse-path",
-        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+        default=str(settings.warehouse_path),
     )
 
     metrics_quarterly_parser = subparsers.add_parser(
@@ -257,7 +257,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     metrics_quarterly_parser.add_argument(
         "--warehouse-path",
-        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+        default=str(settings.warehouse_path),
     )
 
     scores_parser = subparsers.add_parser(
@@ -266,7 +266,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     scores_parser.add_argument(
         "--warehouse-path",
-        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+        default=str(settings.warehouse_path),
     )
     scores_parser.add_argument(
         "--config-path",
@@ -280,7 +280,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     prices_parser.add_argument(
         "--warehouse-path",
-        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+        default=str(settings.warehouse_path),
     )
     prices_parser.add_argument(
         "--simfin-cache-dir", default=str(settings.simfin_data_dir)
@@ -292,7 +292,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     valuation_parser.add_argument(
         "--warehouse-path",
-        default=str(Path(settings.data_root) / "warehouse" / "research.duckdb"),
+        default=str(settings.warehouse_path),
     )
     valuation_parser.add_argument(
         "--history",

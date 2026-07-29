@@ -25,6 +25,19 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.8.0",
 ]
+# The research console. Optional so the pipeline still installs and runs
+# headless without a UI stack; `pip install -e .[ui]` adds it.
+#
+# Why these two, against the dependency policy's "existing stack first" test:
+# the platform spec's D2 already chose Streamlit, and there is no way to serve
+# an interactive local viewer from the standard library without writing a web
+# framework. Altair ships as Streamlit's own charting dependency, so it adds
+# nothing that is not already installed, and it renders a null as a gap rather
+# than as zero -- which is a correctness requirement here, not a preference.
+ui = [
+  "streamlit>=1.40",
+  "altair>=5.0",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
