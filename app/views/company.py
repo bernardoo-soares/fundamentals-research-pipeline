@@ -20,6 +20,9 @@ from fundamentals_pipeline.metrics.quarterly_registry import (
     operand_totals_for,
 )
 from fundamentals_pipeline.metrics.registry import REGISTRY
+from fundamentals_pipeline.metrics.registry import (
+    operand_totals_for as trend_totals_for,
+)
 from fundamentals_pipeline.warehouse import queries as Q
 
 from .. import components as C
@@ -57,6 +60,19 @@ TTM_QUARTERS = 4
 ERA_MARK = {"legacy_compustat": "legacy", "simfin": "SimFin"}
 
 QUARTERLY_BY_ID = {m.metric_id: m for m in QUARTERLY_REGISTRY}
+TREND_BY_ID = {m.metric_id: m for m in REGISTRY}
+
+# A derived intermediate with a one-year window is a per-year SERIES: only the
+# whole series shows which years cleared a threshold, so it is drawn as a row
+# in the operand grid rather than as a single figure.
+SERIES_WINDOW_LENGTH = 1
+
+# Money is stored in millions and reads fine at one decimal. A ratio does not:
+# NVDA's net margin was 0.2411 in FY2016 and 0.1619 in FY2022, and at one
+# decimal both print "0.2" -- destroying the >0.20 discrimination the row
+# exists to make.
+MONEY_DECIMALS = 1
+RATIO_DECIMALS = 4
 
 # How much of a long registry formula to show before the reader has to ask for
 # the rest. Several carry multi-paragraph measurement records.
@@ -110,27 +126,45 @@ def _trend_chart(frame: pd.DataFrame, metric_id: str) -> alt.Chart:
     )
 
 
-def _inputs_table(frame, period_column: str, label) -> str:
-    """Render raw operands as a field x period grid, with the provider era.
+def _inputs_table(
+    frame,
+    period_column: str,
+    label,
+    *,
+    ratio_fields: frozenset[str] = frozenset(),
+    eras: dict | None = None,
+) -> str:
+    """Render operands as a field x period grid, with the provider era.
 
-    The era row is not decoration: it shows exactly where the provider
-    boundary falls inside the window, which is the thing that makes a value
-    carry `mixed_era_window` or `cross_era_window`. Seeing the seam is how a
-    reader checks that verdict for themselves.
+    `ratio_fields` are shown to four decimals; everything else to one. The era
+    row is not decoration: it shows exactly where the provider boundary falls
+    inside the window, which is what makes a value carry `mixed_era_window` or
+    `cross_era_window`. Seeing the seam is how a reader checks that verdict.
+
+    `eras` is passed in rather than read off `frame`, because derived series
+    rows appended to the grid carry no provider of their own and would blank
+    the row if they were allowed to overwrite it.
     """
     periods = list(dict.fromkeys(frame[period_column].tolist()))
     head = "".join(f"<th>{html.escape(label(p))}</th>" for p in periods)
     body = []
     for field, group in frame.groupby("field", sort=True):
         by_period = dict(zip(group[period_column], group["value"], strict=False))
-        cells = "".join(
-            f"<td>{C.num(by_period.get(p), 1)}</td>" for p in periods
+        places = (
+            RATIO_DECIMALS if str(field) in ratio_fields else MONEY_DECIMALS
         )
-        body.append(f'<tr><th class="fld">{html.escape(str(field))}</th>{cells}</tr>')
+        cells = "".join(
+            f"<td>{C.num(by_period.get(p), places)}</td>" for p in periods
+        )
+        derived = ' class="derived"' if str(field) in ratio_fields else ""
+        body.append(
+            f'<tr{derived}><th class="fld">{html.escape(str(field))}</th>'
+            f"{cells}</tr>"
+        )
 
-    eras = dict(zip(frame[period_column], frame["source_era"], strict=False))
+    lookup = eras or {}
     era_cells = "".join(
-        f"<td>{html.escape(ERA_MARK.get(str(eras.get(p)), '—'))}</td>"
+        f"<td>{html.escape(ERA_MARK.get(str(lookup.get(p)), '—'))}</td>"
         for p in periods
     )
     body.append(f'<tr class="era"><th class="fld">provider</th>{era_cells}</tr>')
@@ -174,6 +208,10 @@ def _render_inputs(warehouse_path, ticker: str, metric_id: str, as_of_year: int)
         )
         period, label = "fiscal_year", lambda p: f"FY{int(p)}"
         caption = f"annual values across the {window}-year window"
+        eras = dict(zip(frame["fiscal_year"], frame["source_era"], strict=False))
+        frame, ratio_fields = _with_derived_series(
+            warehouse_path, ticker, metric_id, as_of_year, window, frame
+        )
     else:
         frame = Q.quarterly_inputs(
             warehouse_path,
@@ -190,6 +228,8 @@ def _render_inputs(warehouse_path, ticker: str, metric_id: str, as_of_year: int)
         )
         period, label = "period", str
         caption = f"the {TTM_QUARTERS} quarters ending at the fiscal year end"
+        eras = dict(zip(frame["period"], frame["source_era"], strict=False))
+        ratio_fields = frozenset()
 
     if frame.empty:
         C.absent_block(
@@ -200,35 +240,105 @@ def _render_inputs(warehouse_path, ticker: str, metric_id: str, as_of_year: int)
 
     st.markdown(
         f'<div class="stat-note">{html.escape(caption)}, exactly as Stage 1 '
-        "stores them.</div>" + _inputs_table(frame, period, label),
+        "stores them.</div>"
+        + _inputs_table(
+            frame, period, label, ratio_fields=ratio_fields, eras=eras
+        ),
         unsafe_allow_html=True,
     )
-    if grain == QUARTERLY_GRAIN:
-        _render_operand_totals(warehouse_path, ticker, metric_id, as_of_year)
+    _render_operand_totals(warehouse_path, ticker, metric_id, grain, as_of_year)
+
+
+def _with_derived_series(
+    warehouse_path, ticker: str, metric_id: str, as_of_year: int, window: int, frame
+):
+    """Append per-year derived intermediates as extra rows in the operand grid.
+
+    `net_margin_ge20_years_10y` counts years above 0.20; showing the ratio per
+    year, aligned under the same year columns as its operands, is what makes
+    that count checkable at a glance. The values are read from `metrics_trend`,
+    not divided here.
+    """
+    metric = TREND_BY_ID.get(metric_id)
+    if metric is None:
+        return frame, frozenset()
+    series_ids = tuple(
+        total
+        for total in trend_totals_for(metric)
+        if TREND_BY_ID[total].window_length == SERIES_WINDOW_LENGTH
+    )
+    if not series_ids:
+        return frame, frozenset()
+    extra = Q.trend_metric_series(
+        warehouse_path,
+        ticker=ticker,
+        metric_ids=series_ids,
+        start_year=as_of_year - window + 1,
+        end_year=as_of_year,
+    )
+    if extra.empty:
+        return frame, frozenset()
+    return pd.concat(
+        [
+            frame,
+            extra.rename(
+                columns={"metric_id": "field", "as_of_year": "fiscal_year"}
+            ).assign(source_era=None)[
+                ["fiscal_year", "source_era", "field", "value"]
+            ],
+        ],
+        ignore_index=True,
+    ), frozenset(series_ids)
 
 
 def _render_operand_totals(
-    warehouse_path, ticker: str, metric_id: str, as_of_year: int
+    warehouse_path, ticker: str, metric_id: str, grain: str, as_of_year: int
 ) -> None:
-    """The TTM totals the metric actually used, as the engine published them.
+    """The derived figures the metric used, as the engine published them.
 
-    These are read from `metrics_quarterly`, never summed here. Adding the
-    quarters up in a view would express the TTM rule a second time (S2.6), and
-    a view would happily add across the provider boundary where the engine
-    nulls the window -- so the console would show a total the engine refused
-    to compute. When that happens, the reason code appears instead of a
-    number, which is the honest rendering.
+    Quarterly: the TTM totals. Trend: the per-year series a threshold metric
+    tested, or the masked window sums behind a ratio of sums.
+
+    Always read from the metrics tables, never computed here. Deriving them in
+    a view would express the rule a second time (S2.6), and would produce a
+    figure across the provider boundary where the engine nulls the window --
+    so the console would show a total the engine had refused to compute. When
+    that happens the reason code appears instead of a number.
+
+    The masked window sums are the case that makes this load-bearing rather
+    than convenient: `capex_pct_net_income_avg10y` sums only years where BOTH
+    legs are present, so adding up the operand grid by hand gives a different
+    number than the metric used.
     """
-    metric = QUARTERLY_BY_ID.get(metric_id)
-    if metric is None:
-        return
-    wanted = operand_totals_for(metric)
-    if not wanted:
-        return
-    frame = Q.quarterly_metric_values(
-        warehouse_path, ticker=ticker, metric_ids=wanted, year=as_of_year
-    )
-    if frame.empty:
+    if grain == QUARTERLY_GRAIN:
+        metric = QUARTERLY_BY_ID.get(metric_id)
+        wanted = operand_totals_for(metric) if metric else ()
+        frame = (
+            Q.quarterly_metric_values(
+                warehouse_path, ticker=ticker, metric_ids=wanted, year=as_of_year
+            )
+            if wanted
+            else None
+        )
+    else:
+        metric = TREND_BY_ID.get(metric_id)
+        wanted = (
+            tuple(
+                total
+                for total in trend_totals_for(metric)
+                if TREND_BY_ID[total].window_length != SERIES_WINDOW_LENGTH
+            )
+            if metric
+            else ()
+        )
+        frame = (
+            Q.trend_metric_values(
+                warehouse_path, ticker=ticker, metric_ids=wanted, as_of_year=as_of_year
+            )
+            if wanted
+            else None
+        )
+    if frame is None or frame.empty:
         return
 
     rows = []
@@ -255,10 +365,11 @@ def _render_operand_totals(
     st.markdown(
         '<div class="stat-label" style="margin-top:.8rem">totals the metric '
         "used, as the engine published them</div>"
-        '<div class="stat-note">Read from metrics_quarterly, not summed here: '
-        "a total computed in a view would express the TTM rule a second time, "
-        "and would add across the provider boundary where the engine nulls the "
-        "window.</div>"
+        f'<div class="stat-note">Read from '
+        f'{"metrics_quarterly" if grain == QUARTERLY_GRAIN else "metrics_trend"}'
+        ", not computed here: a figure derived in a view would express the "
+        "rule a second time, and would aggregate across the provider boundary "
+        "where the engine nulls the window.</div>"
         f'<table class="inputs totals"><tbody>{"".join(rows)}</tbody></table>',
         unsafe_allow_html=True,
     )

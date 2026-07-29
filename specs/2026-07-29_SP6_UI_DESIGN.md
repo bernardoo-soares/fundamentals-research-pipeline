@@ -328,4 +328,4 @@ Trend metrics show operands without totals. Their window aggregates — the
 published by the engine, so there is nothing honest to display beside them yet.
 Recorded rather than computed in a view.
 
-Suite after this addition: **573 tests**.
+Suite after this addition: **628 tests**.

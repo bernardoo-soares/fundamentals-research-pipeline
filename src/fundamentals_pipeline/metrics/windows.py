@@ -240,6 +240,77 @@ def consistency_fraction_metric(series_fn: SeriesFn, threshold: float, n: int) -
     return _compute
 
 
+def annual_series_metric(series_fn: SeriesFn) -> ComputeFn:
+    """Publish a derived per-year series as a one-year "window".
+
+    The intermediate a threshold metric actually tests. `net_margin_ge20_years
+    _10y` reports the fraction of years above 0.20, but the reader only sees
+    `niq_annual` and `saleq_annual` in the operand grid and has to divide ten
+    times to check which years cleared it. Publishing the ratio per year makes
+    the verdict inspectable without the console deriving anything.
+
+    Emits one point per year the series covers, with `missing_input` where the
+    ratio is undefined -- never a gap, so an absent year is still a row that
+    states why.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        series = series_fn(frame)
+        if series.empty:
+            return []
+        points: list[MetricPoint] = []
+        for year in series.index:
+            value = series.get(year)
+            if value is None or pd.isna(value):
+                points.append(MetricPoint(int(year), None, ReasonCode.MISSING_INPUT, 0))
+            else:
+                points.append(MetricPoint(int(year), float(value), None, 1))
+        return points
+
+    return _compute
+
+
+def paired_window_sum_metric(
+    sum_fn: SeriesFn, partner_fn: SeriesFn, n: int, *, min_present: int
+) -> ComputeFn:
+    """Sum one leg over the window years where BOTH legs are present.
+
+    The masked total behind `sum_ratio_metric`, published so it can be shown.
+    The mask is why it must be: the metric sums only paired years, so a reader
+    adding up all ten values from the operand grid gets a DIFFERENT number
+    than the metric used. Without this, the hand-check that the drilldown
+    exists to enable would quietly disagree with the value above it.
+
+    `partner_fn` is a real dependency, not context: change the partner's
+    presence and this total changes. It is declared in `inputs` for that
+    reason, and `test_declared_inputs.py` enforces it.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        summed = sum_fn(frame)
+        partner = partner_fn(frame)
+        if summed.empty or partner.empty:
+            return []
+        years = sorted(set(summed.index) | set(partner.index))
+        points: list[MetricPoint] = []
+        for as_of in range(years[0] + n - 1, years[-1] + 1):
+            paired = [
+                float(summed.get(year))
+                for year in range(as_of - n + 1, as_of + 1)
+                if pd.notna(summed.get(year)) and pd.notna(partner.get(year))
+            ]
+            k = len(paired)
+            if k < min_present:
+                points.append(
+                    MetricPoint(as_of, None, ReasonCode.INSUFFICIENT_HISTORY, k)
+                )
+                continue
+            points.append(MetricPoint(as_of, float(sum(paired)), None, k))
+        return points
+
+    return _compute
+
+
 def count_years_metric(series_fn: SeriesFn, threshold: float, n: int) -> ComputeFn:
     """Count of present window years with value > threshold (spec 6.1.3)."""
 

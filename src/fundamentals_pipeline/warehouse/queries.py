@@ -464,6 +464,76 @@ def quarterly_metric_values(
         ).fetchdf()
 
 
+def trend_metric_values(
+    warehouse_path: str | Path,
+    *,
+    ticker: str,
+    metric_ids: tuple[str, ...],
+    as_of_year: int,
+) -> pd.DataFrame:
+    """Published values for named trend metrics at one ticker-year.
+
+    The trend-grain counterpart of `quarterly_metric_values`, used for the
+    derived intermediates the console shows beneath a criterion.
+    """
+    if not metric_ids:
+        return pd.DataFrame(
+            columns=[
+                "metric_id",
+                "value",
+                "reason_code",
+                "quality_flag",
+                "metric_version",
+            ]
+        )
+    placeholders = ", ".join("?" for _ in metric_ids)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT metric_id, value, reason_code, quality_flag, metric_version
+            FROM {METRICS_TREND_TABLE}
+            WHERE ticker = ? AND as_of_year = ?
+              AND metric_id IN ({placeholders})
+            ORDER BY metric_id
+            """,
+            [ticker, as_of_year, *metric_ids],
+        ).fetchdf()
+
+
+def trend_metric_series(
+    warehouse_path: str | Path,
+    *,
+    ticker: str,
+    metric_ids: tuple[str, ...],
+    start_year: int,
+    end_year: int,
+) -> pd.DataFrame:
+    """A per-year derived series across a window, one row per metric-year.
+
+    For the intermediates a threshold metric tests: `net_margin_ge20_years_10y`
+    reports a fraction of years above 0.20, and only the whole series shows
+    WHICH years cleared it. A single year's value cannot answer that.
+
+    Null years are returned as rows with their reason code, never dropped.
+    """
+    if not metric_ids:
+        return pd.DataFrame(
+            columns=["metric_id", "as_of_year", "value", "reason_code"]
+        )
+    placeholders = ", ".join("?" for _ in metric_ids)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT metric_id, as_of_year, value, reason_code
+            FROM {METRICS_TREND_TABLE}
+            WHERE ticker = ? AND metric_id IN ({placeholders})
+              AND as_of_year BETWEEN ? AND ?
+            ORDER BY metric_id, as_of_year
+            """,
+            [ticker, *metric_ids, start_year, end_year],
+        ).fetchdf()
+
+
 def metric_coverage(
     warehouse_path: str | Path, *, as_of_year: int
 ) -> pd.DataFrame:

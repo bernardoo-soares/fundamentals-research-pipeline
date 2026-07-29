@@ -148,3 +148,46 @@ def test_every_declared_input_is_a_real_column():
     for metric in QUARTERLY_REGISTRY:
         unknown = sorted(set(metric.inputs) - quarterly)
         assert not unknown, f"{metric.metric_id}: not Stage 1 fields: {unknown}"
+
+
+# --- The other direction ----------------------------------------------------
+# The checks above catch UNDER-declaration: a metric reading a column it did
+# not declare. They cannot catch OVER-declaration -- a column listed but never
+# read -- because a declared column is never nulled. An over-declared input
+# would put a field in the operand grid that has nothing to do with the value,
+# which is a false audit trail just as much as a missing one.
+
+
+def _depends_on(metric, frame, column, value_columns) -> bool:
+    """Whether nulling one declared column changes the metric's output."""
+    trimmed = frame.copy()
+    trimmed[column] = float("nan")
+    return _points(metric.compute, frame) != _points(metric.compute, trimmed)
+
+
+@pytest.mark.parametrize("metric", REGISTRY, ids=lambda m: m.metric_id)
+def test_every_declared_trend_input_is_actually_read(metric):
+    frame = _annual_frame()
+    unused = [
+        column
+        for column in metric.inputs
+        if not _depends_on(metric, frame, column, ANNUAL_VALUE_COLUMNS)
+    ]
+    assert not unused, (
+        f"{metric.metric_id} declares {unused}, but nulling them changes "
+        "nothing -- the operand grid would show fields the value does not use."
+    )
+
+
+@pytest.mark.parametrize("metric", QUARTERLY_REGISTRY, ids=lambda m: m.metric_id)
+def test_every_declared_quarterly_input_is_actually_read(metric):
+    frame = _quarterly_frame()
+    unused = [
+        column
+        for column in metric.inputs
+        if not _depends_on(metric, frame, column, QUARTERLY_FIELDS)
+    ]
+    assert not unused, (
+        f"{metric.metric_id} declares {unused}, but nulling them changes "
+        "nothing -- the operand grid would show fields the value does not use."
+    )

@@ -351,6 +351,10 @@ def stylesheet() -> str:
     border-bottom: none;
   }}
 
+  /* A derived intermediate is not a stored operand; the gold rule marks the
+     distinction without a legend. */
+  table.inputs tr.derived th.fld {{ color: var(--assay); }}
+
   /* Operand totals: a two-column list, so it does not read as a period grid. */
   table.inputs.totals th.fld {{ width: 16rem; }}
   table.inputs.totals td {{ text-align: left; }}

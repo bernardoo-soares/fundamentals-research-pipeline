@@ -4,7 +4,10 @@ import pandas as pd
 import pytest
 
 from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
-from fundamentals_pipeline.metrics.registry import REGISTRY
+from fundamentals_pipeline.metrics.registry import (
+    REGISTRY,
+    operand_totals_for,
+)
 from fundamentals_pipeline.metrics.windows import gross_margin_series, is_era_guarded
 
 
@@ -26,11 +29,48 @@ def test_registry_ids_and_shape() -> None:
         "receivables_pct_sales_trend_10y",
         "inventory_earnings_correspondence_10y",
         "goodwill_trend",
+        # Derived intermediates: the per-year value a threshold metric tests,
+        # and the masked window sums behind a ratio of sums. Published so the
+        # drilldown shows them rather than deriving them (S2.6).
+        "net_margin_annual",
+        "gross_margin_annual",
+        "receivables_pct_sales_annual",
+        "capex_window_sum_10y",
+        "net_income_window_sum_10y",
     ]
     assert len(ids) == len(set(ids))  # unique
     for m in REGISTRY:
         assert m.version and m.formula and callable(m.compute)
-        assert m.window_length in (2, 4, 10)
+        # 1 for a per-year series, which is a single-year "window".
+        assert m.window_length in (1, 2, 4, 10)
+
+
+def test_trend_operand_totals_attach_by_subset() -> None:
+    """The masked sums must reach the metric whose mask they were built under."""
+    by_id = {m.metric_id: m for m in REGISTRY}
+    assert set(operand_totals_for(by_id["capex_pct_net_income_avg10y"])) == {
+        "capex_window_sum_10y",
+        "net_income_window_sum_10y",
+    }
+    assert operand_totals_for(by_id["net_margin_ge20_years_10y"]) == (
+        "net_margin_annual",
+    )
+    # A CAGR has no hidden intermediate: its two endpoints are already in the
+    # operand grid, so it must not be given one.
+    assert operand_totals_for(by_id["revenue_cagr_10y"]) == ()
+
+
+def test_a_masked_sum_declares_its_partner_leg() -> None:
+    """The partner decides which years are summed, so it is a real input.
+
+    Declaring only the summed leg would put a grid on screen that does not
+    explain the number above it.
+    """
+    by_id = {m.metric_id: m for m in REGISTRY}
+    assert set(by_id["net_income_window_sum_10y"].inputs) == {
+        "capxy_annual",
+        "niq_annual",
+    }
 
 
 def test_registry_metric_computes_expected_value() -> None:
@@ -100,6 +140,12 @@ def test_era_guarded_metrics_are_declared_and_enforced():
         "gross_margin_ge40_years_10y",  # gross-profit arithmetic is era-specific
         "capex_pct_net_income_avg10y",  # capxy CONTRADICTED at 0.551
         "receivables_pct_sales_trend_10y",  # rectq CONTRADICTED at 0.566
+        # The intermediates inherit the guard of the metric they explain: an
+        # unguarded intermediate would show a value beside a nulled metric.
+        "gross_margin_annual",
+        "receivables_pct_sales_annual",
+        "capex_window_sum_10y",
+        "net_income_window_sum_10y",
         "goodwill_trend",  # gdwlq is 0/758 populated in the SimFin era
     }
     for metric in REGISTRY:

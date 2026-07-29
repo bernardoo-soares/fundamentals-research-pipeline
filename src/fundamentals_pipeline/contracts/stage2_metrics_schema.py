@@ -77,6 +77,11 @@ class TrendMetric:
     # metric against a frame holding only its declared inputs and requires
     # byte-identical output.
     inputs: tuple[str, ...] = ()
+    # True for a metric that exists to publish a derived intermediate -- a
+    # per-year series a threshold metric tests, or a masked window sum --
+    # rather than to answer a question of its own. Same subset rule as
+    # `QuarterMetric.is_operand_total`.
+    is_operand_total: bool = False
 
 
 METRICS_TREND_COLUMNS: tuple[str, ...] = (

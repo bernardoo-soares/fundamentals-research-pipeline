@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..contracts.stage2_metrics_schema import ReasonCode, TrendMetric
 from .windows import (
+    annual_series_metric,
     cagr_metric,
     col,
     consistency_fraction_metric,
@@ -13,6 +14,7 @@ from .windows import (
     gross_margin_series,
     is_era_guarded,
     negative_equity_with_strong_earnings_metric,
+    paired_window_sum_metric,
     ratio,
     require_single_era,
     slope_metric,
@@ -242,7 +244,106 @@ REGISTRY: tuple[TrendMetric, ...] = (
         requires_single_era=True,
         inputs=("gdwlq_q4",),
     ),
+    # --- Derived intermediates ---------------------------------------------
+    # Published so the drilldown can show the quantity a metric actually
+    # tested, without the console deriving it (AGENTS.md S2.6). The console
+    # attaches them by the same subset rule used at the quarterly grain.
+    TrendMetric(
+        "net_margin_annual", "1", 1,
+        "niq_annual / saleq_annual for a single fiscal year. The per-year "
+        "value net_margin_ge20_years_10y counts against 0.20; published so "
+        "which years cleared the line is inspectable rather than ten divisions "
+        "the reader has to do by hand.",
+        annual_series_metric(ratio("niq_annual", "saleq_annual")),
+        inputs=("niq_annual", "saleq_annual"),
+        is_operand_total=True,
+    ),
+    TrendMetric(
+        "gross_margin_annual", "1", 1,
+        "(saleq_annual - cogsq_annual - dpq_annual) / saleq_annual for a "
+        "single fiscal year: the per-year value gross_margin_ge40_years_10y "
+        "counts against 0.40. Depreciation is subtracted because Compustat "
+        "states cogsq before it; see gross_margin_ge40_years_10y. ERA-GUARDED "
+        "for the same reason that metric is.",
+        require_single_era(annual_series_metric(gross_margin_series()), 0),
+        requires_single_era=True,
+        inputs=("saleq_annual", "cogsq_annual", "dpq_annual"),
+        is_operand_total=True,
+    ),
+    TrendMetric(
+        "receivables_pct_sales_annual", "1", 1,
+        "rectq_q4 / saleq_annual for a single fiscal year: the series whose "
+        "OLS slope receivables_pct_sales_trend_10y reports. A slope is not "
+        "checkable without the points it was fitted to. ERA-GUARDED for the "
+        "same reason that metric is.",
+        require_single_era(
+            annual_series_metric(ratio("rectq_q4", "saleq_annual")), 0
+        ),
+        requires_single_era=True,
+        inputs=("rectq_q4", "saleq_annual"),
+        is_operand_total=True,
+    ),
+    TrendMetric(
+        "capex_window_sum_10y", "1", STANDARD_WINDOW,
+        "sum of capxy_annual over the 10y window years where BOTH capxy and "
+        "niq are present -- the numerator capex_pct_net_income_avg10y actually "
+        "used. The mask is why this must be published: adding up all ten "
+        "values in the operand grid gives a DIFFERENT number, so the "
+        "hand-check would disagree with the value above it.",
+        require_single_era(
+            paired_window_sum_metric(
+                col("capxy_annual"),
+                col("niq_annual"),
+                STANDARD_WINDOW,
+                min_present=CAPEX_MIN_WINDOW_YEARS,
+            ),
+            STANDARD_WINDOW - 1,
+        ),
+        requires_single_era=True,
+        inputs=("capxy_annual", "niq_annual"),
+        is_operand_total=True,
+    ),
+    TrendMetric(
+        "net_income_window_sum_10y", "1", STANDARD_WINDOW,
+        "sum of niq_annual over the same both-present window years -- the "
+        "denominator capex_pct_net_income_avg10y used. Declares capxy_annual "
+        "as an input because it genuinely reads it: the partner's presence "
+        "decides which years are summed.",
+        require_single_era(
+            paired_window_sum_metric(
+                col("niq_annual"),
+                col("capxy_annual"),
+                STANDARD_WINDOW,
+                min_present=CAPEX_MIN_WINDOW_YEARS,
+            ),
+            STANDARD_WINDOW - 1,
+        ),
+        requires_single_era=True,
+        inputs=("capxy_annual", "niq_annual"),
+        is_operand_total=True,
+    ),
 )
+
+
+def operand_totals_for(
+    metric: TrendMetric,
+    registry: tuple[TrendMetric, ...] = None,
+) -> tuple[str, ...]:
+    """Return the derived intermediates that belong beneath `metric`.
+
+    Same subset rule as the quarterly grain: a total belongs to a metric when
+    everything the total reads is also read by the metric. No lookup table, so
+    nothing to keep in step.
+    """
+    pool = REGISTRY if registry is None else registry
+    wanted = set(metric.inputs)
+    return tuple(
+        total.metric_id
+        for total in pool
+        if total.is_operand_total
+        and total.metric_id != metric.metric_id
+        and set(total.inputs) <= wanted
+    )
 
 
 def validate_registry(registry: tuple[TrendMetric, ...] = REGISTRY) -> None:
