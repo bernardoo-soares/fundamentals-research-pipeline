@@ -359,6 +359,20 @@ def stylesheet() -> str:
   table.inputs.totals th.fld {{ width: 16rem; }}
   table.inputs.totals td {{ text-align: left; }}
 
+  /* The look-back caveat. Sits above the chart, bordered in oxide, because a
+     reader who stops at the picture must still have read it. */
+  .assay-caveat {{
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--oxide);
+    border-radius: var(--radius);
+    padding: .55rem .7rem;
+    margin: .2rem 0 .8rem;
+  }}
+
   /* ---- Absence ----------------------------------------------------------- */
   /* A metric with no data states the absence. An empty chart frame reads as a
      bug rather than as "the source stopped providing this". */

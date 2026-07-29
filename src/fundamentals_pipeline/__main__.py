@@ -41,6 +41,7 @@ from .steps.simfin_raw_fundamentals_builder import build_simfin_raw_fundamentals
 from .steps.sp500_universe_builder import build_sp500_current_universe
 from .steps.stage1_era_resolution import resolve_stage1_era
 from .steps.stage1_extension_coverage_audit import run_stage1_extension_coverage_audit
+from .warehouse.benchmark_builder import build_benchmark
 from .warehouse.companies_builder import build_companies
 from .warehouse.rebuild import rebuild_warehouse
 
@@ -299,6 +300,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--history",
         action="store_true",
         help="Also value each fiscal year end into valuation_history.",
+    )
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark-build",
+        help=(
+            "Load the market benchmark series (SPY, standing in for ^SPX) "
+            "into benchmark_daily."
+        ),
+    )
+    benchmark_parser.add_argument(
+        "--warehouse-path",
+        default=str(settings.warehouse_path),
     )
 
     companies_parser = subparsers.add_parser(
@@ -835,6 +848,14 @@ def main() -> None:
         for key, value in result.items():
             print(f"{key}={value}")
         return
+
+    if args.command == "benchmark-build":
+        LOG.info("Running benchmark build: warehouse_path=%s", args.warehouse_path)
+        result = build_benchmark(warehouse_path=args.warehouse_path)
+        LOG.info("Benchmark build completed: %s", result)
+        for key, value in result.items():
+            print(f"{key}={value}")
+        return 0
 
     if args.command == "companies-build":
         LOG.info("Running companies build: warehouse_path=%s", args.warehouse_path)

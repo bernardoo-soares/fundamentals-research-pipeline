@@ -39,14 +39,20 @@ for _candidate in (_REPO_ROOT, _REPO_ROOT / "src"):
 
 from app import components as C  # noqa: E402
 from app.theme import stylesheet  # noqa: E402
-from app.views import company, health, ranking  # noqa: E402
+from app.views import (  # noqa: E402
+    company,
+    health,
+    portfolio,
+    ranking,
+    watchlist,
+)
 from fundamentals_pipeline.core.settings import get_settings  # noqa: E402
 from fundamentals_pipeline.warehouse import queries as Q  # noqa: E402
 from fundamentals_pipeline.warehouse.queries import (  # noqa: E402
     WarehouseUnavailable,
 )
 
-VIEWS = ("Ranking", "Company", "Data health")
+VIEWS = ("Ranking", "Company", "Vs market", "Watchlist", "Data health")
 
 # The universe the S&P 500 is drawn from, for the horizon banner's denominator.
 UNIVERSE_SIZE = 502
@@ -123,6 +129,10 @@ def main() -> None:
         ranking.render(warehouse_path, as_of_year)
     elif view == "Company":
         company.render(warehouse_path, as_of_year, frame["ticker"].tolist())
+    elif view == "Vs market":
+        portfolio.render(warehouse_path, as_of_year, frame)
+    elif view == "Watchlist":
+        watchlist.render(warehouse_path, frame)
     else:
         health.render(warehouse_path, as_of_year)
 

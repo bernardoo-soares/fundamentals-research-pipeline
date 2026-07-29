@@ -146,11 +146,8 @@ the query API; C1–C6 enforced and tested.
 
 **Out, with reasons**
 
-- **Portfolio vs S&P 500 (§8.3).** Needs a `^SPX` benchmark series that does
-  not exist yet. That is SP7.
-- **Watchlist (§8.5).** Needs `manual_annotations`, the only writable table.
-  Deferred so slice 1 can be strictly read-only, which is a much easier
-  guarantee to verify.
+- ~~Portfolio vs S&P 500 (§8.3).~~ **Built 2026-07-29, see §11.**
+- ~~Watchlist (§8.5).~~ **Built 2026-07-29, see §12.**
 - **Sector filter and company names (§8.1).** M6 — the data does not exist.
 
 ## 6. Verification (2026-07-29)
@@ -182,9 +179,8 @@ Full suite: 469 tests, `ruff` and `compileall` clean.
 
 ## 7. Open items
 
-1. **Page ③ Portfolio vs S&P 500** — needs a `^SPX` series. SP7.
-2. **Page ⑤ Watchlist** — needs `manual_annotations`, the only writable table.
-   Deferred so slice 1 stays strictly read-only.
+1. ~~Page ③ Portfolio vs S&P 500~~ — built 2026-07-29, see §11.
+2. ~~Page ⑤ Watchlist~~ — built 2026-07-29, see §12.
 3. ~~Company names and sectors~~ — **built 2026-07-29**, see §9.
 4. ~~The drilldown's "inputs row"~~ — **built 2026-07-29**, see §8.
 
@@ -329,3 +325,102 @@ published by the engine, so there is nothing honest to display beside them yet.
 Recorded rather than computed in a view.
 
 Suite after this addition: **628 tests**.
+
+## 11. Vs market (platform spec §8.3)
+
+### 11.1 The benchmark is SPY, not ^SPX
+
+No index series is available: SimFin's price file carries 5,891 **tradeable**
+symbols and no index, and the Stooq path is behind a proof-of-work challenge
+this project deliberately does not circumvent. SPY, the ETF, is used instead.
+
+That is a good proxy for a **price-return** comparison and the page says so
+rather than calling SPY "the S&P 500": the S&P 500 price index excludes
+dividends by construction and SPY's price drops on each ex-date, so both sides
+exclude dividends — the symmetry the spec requires. SPY still differs by its
+expense ratio (~0.09%/yr) and tracking error.
+
+Verified: 349.31 (2020-08-31) → 621.72 (2025-08-01), +78.0%, no null closes,
+largest gap 4 days.
+
+Stored in its own `benchmark_daily` table rather than in `prices_daily`:
+identical shape, different meaning. There, `ticker` is a company in the
+research universe; here it is a market proxy that must never be ranked or
+scored. Merging them would make one column mean two things (S4.3).
+
+### 11.2 Windows are 1–4 years, and 5 and 10 are impossible
+
+The price history runs 2020-08-31 to 2025-08-01 — **4.92 years** — so the
+spec's 5- and 10-year windows cannot be filled. A 5-year window would start one
+day before the first available price. Offering it would either silently shorten
+the window or silently drop every ticker, so it is not offered and the sidebar
+states the reason.
+
+### 11.3 Where the arithmetic lives
+
+Every other console number is SELECTed because every other number is
+precomputed. A portfolio is chosen at runtime, so there is no table to
+precompute it into. That does **not** license arithmetic in a view: the
+computation is a pure, tested module (`portfolio/comparison.py`) and the view
+calls it. C5 is narrowed by exactly this much, and the narrowing is written in
+that module's docstring so it cannot spread.
+
+### 11.4 The insufficient-history policy is load-bearing
+
+A ticker with no price at the window start is **excluded and named**, never
+begun late. Beginning it late would report a partial holding as a full one; in
+a 4-year window GEHC (spun off Jan 2023) would otherwise contribute a 2.5-year
+return as though it were 4.
+
+A defect the tests caught: the window filter ran **before** the as-of
+look-back, so the documented weekend/holiday tolerance never actually worked.
+Dense real prices hid it entirely — every manual check passed. There are now
+two filters, one reaching back by the look-back to find the opening price and
+one starting at the window for the chart.
+
+### 11.5 The caveat is above the chart
+
+`LOOKBACK_CAVEAT` is a contract constant, not prose in a view, so it cannot be
+edited away or drift between surfaces. It sits **above** the chart: a reader
+who stops at the picture must still have read it. The page never uses the word
+backtest.
+
+## 12. Watchlist (platform spec §8.5)
+
+`manual_annotations` is the only table the console writes, and the only one in
+the warehouse whose loss is permanent — every other table is derived and costs
+a re-run.
+
+### 12.1 A rebuild would have destroyed it
+
+`rebuild_warehouse` builds into a temp file and `os.replace`s it over the
+original. Without intervention, **the first `warehouse-rebuild` after starring
+anything would have silently and permanently destroyed every note and star.**
+`carry_annotations` now copies them across the swap, the rebuild reports
+`annotations_carried`, and a test performs a real rebuild and asserts the note
+survives.
+
+### 12.2 Nothing derived may read it
+
+No metric, scorer or valuation depends on an annotation, or the pipeline stops
+being reproducible from code plus raw inputs (S3.1). A starred company scores
+exactly what an unstarred one does.
+
+### 12.3 Notes are stored verbatim, and refused rather than truncated
+
+A person's own words are never parsed or reformatted; the console escapes them
+when rendering, which is a display concern. A note over the length limit raises
+instead of being cut — storing half of what someone wrote is worse than
+declining to store it. `created_at` survives edits, so "when did I first look
+at this?" outlives rewriting the note.
+
+### 12.4 A locked warehouse reports instead of crashing
+
+Found by running it: DuckDB takes an exclusive lock to write, and an earlier
+draft called `ensure_table` from every **read** — so merely opening the page
+needed write access, and Dropbox holding the file produced a traceback where
+the watchlist should be. Reads now open read-only and tolerate a missing
+table; writes raise a typed `AnnotationStoreBusy` that the page shows as a
+sentence, with nothing changed.
+
+Suite after these two pages: **659 tests**.

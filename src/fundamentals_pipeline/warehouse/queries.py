@@ -16,6 +16,7 @@ Kept free of Streamlit so it is testable without a browser.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -28,6 +29,7 @@ from ..contracts.stage1_fundamentals_schema import (
     EXTENDED_RAW_FIELDS,
     SUPPORT_RAW_FIELDS,
 )
+from ..portfolio.comparison import MAX_START_LOOKBACK_DAYS
 from .connection import open_warehouse
 
 # The column names a metric may declare as an input, taken from the schema
@@ -52,6 +54,8 @@ FUNDAMENTALS_QUARTERLY_TABLE = "fundamentals_quarterly"
 VALUATION_HISTORY_TABLE = "valuation_history"
 # Optional: names and GICS sectors. See `has_companies`.
 COMPANIES_TABLE = "companies"
+PRICES_DAILY_TABLE = "prices_daily"
+BENCHMARK_TABLE = "benchmark_daily"
 
 REQUIRED_TABLES: tuple[str, ...] = (
     SCORES_TABLE,
@@ -532,6 +536,80 @@ def trend_metric_series(
             """,
             [ticker, *metric_ids, start_year, end_year],
         ).fetchdf()
+
+
+def has_benchmark(warehouse_path: str | Path) -> bool:
+    """Whether the benchmark series has been built."""
+    with _connect(warehouse_path) as conn:
+        return bool(
+            conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_name = ?",
+                [BENCHMARK_TABLE],
+            ).fetchone()[0]
+        )
+
+
+def price_history(
+    warehouse_path: str | Path,
+    *,
+    tickers: tuple[str, ...],
+    start: date,
+    end: date,
+) -> pd.DataFrame:
+    """Daily closes for a selection, long-form `(ticker, date, close)`.
+
+    A window's start look-back needs prices slightly BEFORE `start`, so the
+    query reaches back by `MAX_START_LOOKBACK_DAYS`; the comparison then does
+    the as-of selection. Widening the window here rather than there keeps the
+    look-back rule in one place.
+    """
+    if not tickers:
+        return pd.DataFrame(columns=["ticker", "date", "close"])
+    placeholders = ", ".join("?" for _ in tickers)
+    reach = start - timedelta(days=MAX_START_LOOKBACK_DAYS)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT ticker, date, close
+            FROM {PRICES_DAILY_TABLE}
+            WHERE ticker IN ({placeholders})
+              AND date BETWEEN ? AND ?
+              AND close IS NOT NULL
+            ORDER BY ticker, date
+            """,
+            [*tickers, reach, end],
+        ).fetchdf()
+
+
+def benchmark_history(
+    warehouse_path: str | Path, *, start: date, end: date
+) -> pd.DataFrame:
+    """Daily benchmark closes, long-form `(date, close)`."""
+    if not has_benchmark(warehouse_path):
+        return pd.DataFrame(columns=["date", "close"])
+    reach = start - timedelta(days=MAX_START_LOOKBACK_DAYS)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT date, close
+            FROM {BENCHMARK_TABLE}
+            WHERE date BETWEEN ? AND ? AND close IS NOT NULL
+            ORDER BY date
+            """,
+            [reach, end],
+        ).fetchdf()
+
+
+def price_coverage(warehouse_path: str | Path) -> tuple[date, date] | None:
+    """The first and last date any price exists for, or None if unpriced."""
+    if not has_benchmark(warehouse_path):
+        return None
+    with _connect(warehouse_path) as conn:
+        row = conn.execute(
+            f"SELECT MIN(date), MAX(date) FROM {BENCHMARK_TABLE}"
+        ).fetchone()
+    return (row[0], row[1]) if row and row[0] else None
 
 
 def metric_coverage(

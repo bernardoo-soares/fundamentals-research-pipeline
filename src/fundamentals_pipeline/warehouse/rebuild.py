@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .annotations import carry_annotations
 from .annualize import build_fundamentals_annual
 from .connection import open_warehouse
 from .fundamentals_loader import load_fundamentals_quarterly
@@ -81,6 +82,13 @@ def rebuild_warehouse(
                     pipeline_version,
                 ],
             )
+            # Carry the one table that cannot be rebuilt across the swap.
+            # Everything else here is derived from the raw inputs plus
+            # committed code, so losing it costs a re-run; a note someone
+            # typed is gone for good. `os.replace` below would destroy it
+            # silently, which is exactly the kind of quiet, irreversible loss
+            # this project exists to avoid.
+            carried = carry_annotations(source=warehouse, destination=conn)
     except Exception:
         if tmp_path.exists():
             tmp_path.unlink()
@@ -92,4 +100,5 @@ def rebuild_warehouse(
         "health_report_path": health_path,
         "plausibility_violations_path": violations_path,
         "plausibility_nulled_count": str(len(violations)),
+        "annotations_carried": str(carried),
     }
