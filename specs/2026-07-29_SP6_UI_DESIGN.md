@@ -18,7 +18,7 @@ every choice below.
 | M3 | Coverage ≥1.0: **28 tickers**. ≥0.9: **135**. ≥0.7: **310** | The honest ranking is ~135 names, not 384. The default view must say so |
 | M4 | Mean composite drifts **56.8 (FY2020) → 64.6 (FY2024)** while mean coverage falls 0.87 → 0.81 | Companies did not improve; the harder criteria stopped being measurable. Cross-year composite comparison must be blocked, not merely discouraged |
 | M5 | Four trend metrics are effectively dead in FY2024: `gross_margin_ge40` 6/344, `receivables_pct_sales_trend` 6/344, `goodwill_trend` 6/344, `capex_pct_net_income_avg10y` 4/344 | Never render an empty chart frame. An empty axis reads as a bug, not as "the source stopped providing this" |
-| M6 | **No sector and no company name exist anywhere in the data.** `universe_current.csv` is `(as_of_date, year, ticker)` | Platform spec §8.1's "name, sector" columns and sector filter are **not buildable**. Not invented — reported |
+| M6 | ~~No sector and no company name exist anywhere in the data.~~ **Corrected 2026-07-29** — see §9. The warehouse held none, but `connectors/wikipedia_sp500_client.py` was already downloading them and discarding the columns | Names and a sector filter are now built |
 
 ### 1.1 The central problem
 
@@ -108,8 +108,7 @@ now in the geometry.
   figures read better on light.
 - **Sparklines in the ranking table.** M5 means several would be empty, and an
   empty sparkline is indistinguishable from a flat one.
-- **A sector filter.** M6: the data does not exist. Building it would require
-  inventing sector labels.
+- ~~A sector filter.~~ Built 2026-07-29 once the source was found; see §9.
 
 ## 3. Constraints the UI must enforce
 
@@ -186,8 +185,7 @@ Full suite: 469 tests, `ruff` and `compileall` clean.
 1. **Page ③ Portfolio vs S&P 500** — needs a `^SPX` series. SP7.
 2. **Page ⑤ Watchlist** — needs `manual_annotations`, the only writable table.
    Deferred so slice 1 stays strictly read-only.
-3. **Company names and sectors** — M6: no such data exists in the warehouse.
-   Adding them means adding a source, not a view.
+3. ~~Company names and sectors~~ — **built 2026-07-29**, see §9.
 4. ~~The drilldown's "inputs row"~~ — **built 2026-07-29**, see §8.
 
 ## 8. The inputs row (platform spec §8.2.2)
@@ -250,3 +248,84 @@ contracts before use; a name outside the contract raises rather than
 interpolating. Tested.
 
 Suite after this addition: **538 tests**.
+
+## 9. Company identity (correcting M6)
+
+M6 said no source provided company names or sectors. That was right about the
+warehouse and wrong about the pipeline: `connectors/wikipedia_sp500_client.py`
+already downloaded the full S&P 500 constituents table — `Security`, `GICS
+Sector`, `GICS Sub-Industry`, `CIK` — and threw every column but the symbol
+away, one line after parsing it. The data was one function call from where it
+was needed.
+
+`companies-build` now publishes a `companies` table: **503 rows, 11 GICS
+sectors**, covering **484 of 494 scored tickers (98.0%)**.
+
+### 9.1 Two claims the table does not make
+
+1. **Not point-in-time.** This is current membership and current
+   classification. GICS reclassifies — the 2023 revision moved payment
+   processors out of Information Technology into Financials — so a sector shown
+   against FY2015 is today's label. It filters and labels; nothing derived keys
+   off it, and the sector control says so in its help text.
+2. **Not complete, and completeness is not achievable from this source.** The
+   10 misses (BK, CAG, CPB, EPAM, HOLX, LW, MOH, MTCH, PAYC, POOL) have left
+   the index. A current-membership list cannot name a former member, and
+   guessing a name from a ticker is fabrication. Those rows are ranked
+   normally and shown by ticker alone; the drilldown says "not a current S&P
+   500 constituent". The join is a LEFT JOIN precisely so they are never
+   dropped.
+
+An unrecognised sector raises rather than publishing, so a Wikipedia edit or a
+wrong-table parse cannot quietly introduce a twelfth sector nobody filters on.
+
+### 9.2 A defect I introduced and removed
+
+The first draft normalised `.` to `-` in class-share tickers, assuming the two
+sides spelled them differently. Measured: **both write `BRK.B` and `BF.B`**. The
+rewrite invented a mismatch and then caused it, leaving Berkshire and
+Brown-Forman unnamed — the exact failure it was meant to prevent. Symbols are
+now joined exactly as both sides publish them, and a test pins it.
+
+## 10. Operand totals published by the engine (revising §8.2)
+
+§8.2 said no derived total would be shown, because computing one in a view
+would duplicate the TTM rule. That reasoning holds; the conclusion was too
+narrow. The right fix is not to withhold the total but to have the **metric
+engine publish it**, so the console reads a versioned, era-guarded,
+reason-coded figure like any other.
+
+Eight new quarterly metrics do that: `revenue_ttm`, `cost_of_revenue_ttm`,
+`depreciation_ttm`, `sga_ttm`, `rd_ttm`, `interest_expense_ttm`,
+`operating_income_ttm`, and the era-dispatched `gross_profit_ttm`. With
+`eps_ttm` and `net_income_ttm`, which already existed, that is **10 operand
+totals** across a registry of 23.
+
+### 10.1 A subset rule, not a lookup table
+
+`QuarterMetric.is_operand_total` is the only new declaration. The console shows
+beneath a metric M every total T whose `inputs` are a **subset** of M's. That
+rule cannot drift, needs no field→metric map, and picks up `gross_profit_ttm`
+for the three ratios built on it with no special case. Stock-only metrics
+(`current_ratio`, `debt_to_equity_adj`) correctly get none.
+
+### 10.2 Still not computed in a view
+
+The totals are read from `metrics_quarterly`. Where the engine nulled a window
+that crosses the provider boundary, the console shows the reason code instead
+of a number — which is the whole point: a view that summed the quarters itself
+would print a total the engine had refused to compute.
+
+**Verified on screen.** NVDA FY2024: the grid shows `niq` 14,881 / 16,599 /
+19,309 / 22,091 and `saleq` 26,044 / 30,040 / 35,082 / 39,331; the engine
+publishes `net_income_ttm 72,880` and `revenue_ttm 130,497`; `net_margin` reads
+**0.5585**. Every step of the chain is on the page.
+
+### 10.3 Still open
+
+Trend metrics show operands without totals. Their window aggregates — the
+10-year capex and earnings sums behind `capex_pct_net_income_avg10y` — are not
+published by the engine, so there is nothing honest to display beside them yet.
+Recorded rather than computed in a view.
+
+Suite after this addition: **573 tests**.

@@ -445,12 +445,46 @@ def ttm_over_gross_profit(field: str) -> ComputeFn:
     return _compute
 
 
+def gross_profit_ttm_metric() -> ComputeFn:
+    """Publish TTM gross profit itself, not just ratios built on it.
+
+    Three shipped metrics divide by this quantity, and the console shows it as
+    the denominator behind them. Publishing it here means the console reads a
+    versioned, era-guarded, reason-coded value rather than re-deriving the
+    era-dispatched arithmetic a second time (AGENTS.md S2.6).
+
+    Carries `da_allocation_assumed` in the legacy era for the same measured
+    reason its consumers do; see `ttm_gross_profit`.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[QuarterPoint]:
+        prepared = _prepare(frame)
+        profit = ttm_gross_profit(prepared)
+
+        def value_for(as_of: int):
+            gross = profit.get(as_of)
+            if gross is None:
+                return None, ReasonCode.MISSING_INPUT, None
+            if gross.mixed_non_equivalent:
+                return None, ReasonCode.MIXED_ERA_WINDOW, None
+            return gross.total, None, gross.quality_flag
+
+        return _points_over_frame(prepared, value_for)
+
+    return _compute
+
+
 def ttm_sum(field: str) -> ComputeFn:
     """The plain TTM sum of one flow field.
 
-    Used for `eps_ttm`, which the valuation layer consumes. Kept here, pure and
-    price-free, so the scoring layer's "never touches prices" guarantee is
-    unaffected by valuation existing at all.
+    Consumed by `eps_ttm` (valuation) and by the operand totals the console
+    shows beneath each criterion. Kept here, pure and price-free, so the
+    scoring layer's "never touches prices" guarantee is unaffected by
+    valuation existing at all.
+
+    Per-field era purity comes from `ttm_flow`: a window spanning the provider
+    boundary on a non-equivalent field is nulled `mixed_era_window` rather than
+    summed across two different quantities.
     """
 
     def _compute(frame: pd.DataFrame) -> list[QuarterPoint]:

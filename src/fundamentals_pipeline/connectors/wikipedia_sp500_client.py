@@ -7,6 +7,7 @@ from io import StringIO
 import pandas as pd
 import requests
 
+from ..contracts.company_profile_schema import WIKIPEDIA_COLUMN_MAP
 from ..core.settings import get_settings
 
 
@@ -61,3 +62,36 @@ class SP500Constituents:
         """Fetch and return the current S&P 500 ticker list."""
         tables = self._fetch_tables()
         return self._get_current_members(tables)
+
+    @staticmethod
+    def _get_profile(tables: list[pd.DataFrame]) -> pd.DataFrame:
+        """Extract name and GICS classification from the constituents table.
+
+        The same table `_get_current_members` reads. Every column but the
+        symbol used to be discarded one line after parsing, which is why the
+        warehouse held no company name or sector until 2026-07-29.
+
+        Columns are selected by declared name, never by position: the table's
+        column order has changed before, and a positional read would silently
+        put headquarters into the sector field.
+        """
+        df = tables[0].copy()
+        missing = [c for c in WIKIPEDIA_COLUMN_MAP if c not in df.columns]
+        if missing:
+            raise RuntimeError(
+                f"S&P 500 table is missing expected column(s): {missing}. "
+                "The page layout changed; update WIKIPEDIA_COLUMN_MAP."
+            )
+        out = df[list(WIKIPEDIA_COLUMN_MAP)].rename(columns=WIKIPEDIA_COLUMN_MAP)
+        for column in ("ticker", "company_name", "sector", "sub_industry"):
+            out[column] = out[column].astype(str).str.strip()
+        return out
+
+    def get_sp500_profile(self) -> pd.DataFrame:
+        """Fetch current constituents with name, sector and sub-industry.
+
+        Current membership and current classification -- not point-in-time.
+        See `contracts/company_profile_schema.py` for what this may and may not
+        be used for.
+        """
+        return self._get_profile(self._fetch_tables())

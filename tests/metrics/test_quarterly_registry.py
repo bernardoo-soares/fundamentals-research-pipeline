@@ -10,6 +10,7 @@ from fundamentals_pipeline.contracts.metric_reason_codes import ReasonCode
 from fundamentals_pipeline.metrics.quarterly import apply_era_restriction
 from fundamentals_pipeline.metrics.quarterly_registry import (
     QUARTERLY_REGISTRY,
+    operand_totals_for,
     validate_quarterly_registry,
 )
 
@@ -34,7 +35,44 @@ def test_registry_has_every_declared_quarterly_metric() -> None:
         "sga_pct_gross_profit",
         "rd_pct_gross_profit",
         "dep_pct_gross_profit",
+        # Operand totals: published so the console can show the derived figure
+        # a ratio used, without re-deriving the TTM rule in a view (S2.6).
+        "revenue_ttm",
+        "cost_of_revenue_ttm",
+        "depreciation_ttm",
+        "sga_ttm",
+        "rd_ttm",
+        "interest_expense_ttm",
+        "operating_income_ttm",
+        "gross_profit_ttm",
     }
+
+
+def test_operand_totals_are_marked_and_read_one_concept_each() -> None:
+    """A total that read several unrelated fields would attach to nothing."""
+    totals = [m for m in QUARTERLY_REGISTRY if m.is_operand_total]
+    # 7 new plain TTM sums, the 2 that already existed (eps_ttm,
+    # net_income_ttm), and the era-dispatched gross_profit_ttm.
+    assert len(totals) == 10
+    for metric in totals:
+        assert metric.inputs, f"{metric.metric_id} declares no inputs"
+
+
+def test_operand_totals_attach_by_subset_not_by_lookup_table() -> None:
+    """The subset rule must pick up gross_profit_ttm without a special case."""
+    by_id = {m.metric_id: m for m in QUARTERLY_REGISTRY}
+    assert set(operand_totals_for(by_id["net_margin"])) == {
+        "net_income_ttm",
+        "revenue_ttm",
+    }
+    assert "gross_profit_ttm" in operand_totals_for(by_id["sga_pct_gross_profit"])
+    # A stock-only metric has no TTM behind it, and must not be given one.
+    assert operand_totals_for(by_id["current_ratio"]) == ()
+
+
+def test_an_operand_total_never_lists_itself() -> None:
+    by_id = {m.metric_id: m for m in QUARTERLY_REGISTRY}
+    assert "revenue_ttm" not in operand_totals_for(by_id["revenue_ttm"])
 
 
 def test_validate_rejects_duplicate_ids() -> None:

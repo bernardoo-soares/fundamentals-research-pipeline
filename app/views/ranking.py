@@ -53,17 +53,53 @@ def render(warehouse_path, as_of_year: int) -> None:
         )
         min_score = st.slider("Minimum composite", 0.0, 100.0, 0.0, 1.0)
         sort_by = st.radio("Rank by", SORT_OPTIONS, index=0)
-        search = st.text_input("Find ticker", placeholder="e.g. KO").strip().upper()
+        available = Q.sectors(warehouse_path, as_of_year=as_of_year)
+        chosen_sectors = (
+            st.multiselect(
+                "Sector",
+                available,
+                help=(
+                    "Current GICS classification, not the classification as "
+                    "of this fiscal year. GICS reclassifies -- the 2023 "
+                    "revision moved payment processors from Information "
+                    "Technology into Financials -- so this filters and "
+                    "labels, and nothing derived keys off it."
+                ),
+            )
+            if available
+            else []
+        )
+        search = (
+            st.text_input("Find company or ticker", placeholder="e.g. KO")
+            .strip()
+            .upper()
+        )
 
     shown = frame[frame["coverage_ratio"].fillna(0.0) >= min_coverage]
     shown = shown[shown["composite"].fillna(0.0) >= min_score]
+    if chosen_sectors:
+        shown = shown[shown["sector"].isin(chosen_sectors)]
     if search:
-        shown = shown[shown["ticker"].str.contains(search, na=False)]
+        # Match either identifier, so a reader who knows the name but not the
+        # symbol is not stuck.
+        shown = shown[
+            shown["ticker"].str.contains(search, na=False)
+            | shown["company_name"].str.upper().str.contains(search, na=False)
+        ]
     shown = shown.sort_values(
         "evidence" if sort_by == SORT_EVIDENCE else "composite",
         ascending=False,
         kind="mergesort",
     )
+
+    if not Q.has_companies(warehouse_path):
+        st.markdown(
+            '<div class="assay-horizon">Company names and sectors are not '
+            "built. Run <b>python -m fundamentals_pipeline companies-build</b> "
+            "to add them; the ranking is complete and correct without "
+            "them.</div>",
+            unsafe_allow_html=True,
+        )
 
     excluded = len(frame) - len(shown)
     C.eyebrow(
@@ -80,8 +116,9 @@ def render(warehouse_path, as_of_year: int) -> None:
 
     st.markdown(
         '<div class="rank-row rank-head">'
-        "<div>#</div><div>Ticker</div><div>Score, and how much of it was "
-        "measured</div><div class='rank-num'>Coverage</div>"
+        "<div>#</div><div>Ticker</div><div>Company</div>"
+        "<div>Score, and how much of it was measured</div>"
+        "<div class='rank-num'>Coverage</div>"
         "<div class='rank-num'>Checklist</div><div class='rank-num'>P/E</div>"
         "</div>",
         unsafe_allow_html=True,
@@ -98,10 +135,18 @@ def render(warehouse_path, as_of_year: int) -> None:
             if row["checklist_applicable"] and row["checklist_applicable"] > 0
             else "—"
         )
+        # A company that has left the index has no current-membership row, so
+        # it is shown by ticker alone rather than given an invented name.
+        name = (
+            "" if C._is_absent(row["company_name"]) else str(row["company_name"])
+        )
+        sector = "" if C._is_absent(row["sector"]) else str(row["sector"])
         rows.append(
             '<div class="rank-row">'
             f'<div class="rank-n">{offset}</div>'
             f'<div class="rank-ticker">{html.escape(str(row["ticker"]))}</div>'
+            f'<div class="rank-name" title="{html.escape(sector)}">'
+            f"{html.escape(name)}</div>"
             f"<div>{C.evidence_bar(row['composite'], row['coverage_ratio'])}</div>"
             f'<div class="rank-num rank-thin">{C.num(row["coverage_ratio"], 2)}</div>'
             f'<div class="rank-num rank-thin">{checklist}</div>'

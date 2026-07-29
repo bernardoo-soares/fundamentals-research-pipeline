@@ -12,6 +12,7 @@ from ..contracts.metrics_quarterly_schema import QuarterMetric
 from .quarterly import (
     debt_to_equity_adj_metric,
     gross_margin_metric,
+    gross_profit_ttm_metric,
     presence_flag,
     stock_over_ttm,
     stock_ratio,
@@ -42,6 +43,21 @@ _GROSS_PROFIT_ERA_NOTE = (
     "exact for the 34.4% of filers who fold all D&A into COGS, understating by "
     "a median 13.46pp for the 26.4% who present it outside. One-directional, so "
     "it can never manufacture a false '>40%' pass. SimFin rows need no flag."
+)
+
+# Shared by the operand totals below: they are published so the console can
+# show the derived figure a ratio actually used, without re-deriving the TTM
+# rule a second time (AGENTS.md S2.6). They are deliberately NOT
+# era-restricted: each is the sum of one provider's own field, and per-field
+# era purity inside `ttm_flow` already nulls a window that spans the boundary
+# on a non-equivalent field. Where a CONSUMING ratio is era-restricted
+# (interest_pct_operating_income is legacy-only), the operand total may still
+# be present while the ratio is null -- which is the honest reading: the
+# operand exists, the comparison does not.
+_OPERAND_TOTAL_NOTE = (
+    " Published as an operand total: three or more shipped metrics use it, and "
+    "the console shows it as the derived figure behind them rather than "
+    "recomputing the TTM rule in a view."
 )
 
 QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
@@ -101,6 +117,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "mixed_era_window by per-field purity.",
         ttm_sum("epspxq"),
         inputs=("epspxq",),
+        is_operand_total=True,
     ),
     QuarterMetric(
         "net_income_ttm",
@@ -113,6 +130,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "invariant to split adjustment because the same basis cancels.",
         ttm_sum("niq"),
         inputs=("niq",),
+        is_operand_total=True,
     ),
     QuarterMetric(
         "treasury_stock_present",
@@ -163,7 +181,117 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         ttm_over_gross_profit("dpq"),
         inputs=("dpq", "saleq", "cogsq"),
     ),
+    # --- Operand totals ----------------------------------------------------
+    # See _OPERAND_TOTAL_NOTE. Named for what they mean in the domain, not for
+    # the column they sum (AGENTS.md S2.7).
+    QuarterMetric(
+        "revenue_ttm",
+        "1",
+        "sum of the 4 most recent quarterly saleq." + _OPERAND_TOTAL_NOTE,
+        ttm_sum("saleq"),
+        inputs=("saleq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "cost_of_revenue_ttm",
+        "1",
+        "sum of the 4 most recent quarterly cogsq. NOTE: Compustat states "
+        "cogsq BEFORE depreciation while SimFin's Cost of Revenue is the "
+        "as-reported line, so this total is NOT comparable across the provider "
+        "boundary; per-field era purity nulls a window that spans it."
+        + _OPERAND_TOTAL_NOTE,
+        ttm_sum("cogsq"),
+        inputs=("cogsq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "depreciation_ttm",
+        "1",
+        "sum of the 4 most recent quarterly dpq." + _OPERAND_TOTAL_NOTE,
+        ttm_sum("dpq"),
+        inputs=("dpq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "sga_ttm",
+        "1",
+        "sum of the 4 most recent quarterly xsgaq. NOTE: Compustat's xsgaq "
+        "absorbs R&D while SimFin reports the two separately, so legacy xsgaq "
+        "must be compared against SimFin xsgaq + xrdq, never xsgaq alone."
+        + _OPERAND_TOTAL_NOTE,
+        ttm_sum("xsgaq"),
+        inputs=("xsgaq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "rd_ttm",
+        "1",
+        "sum of the 4 most recent quarterly xrdq." + _OPERAND_TOTAL_NOTE,
+        ttm_sum("xrdq"),
+        inputs=("xrdq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "interest_expense_ttm",
+        "1",
+        "sum of the 4 most recent quarterly xintq. NOTE: SimFin reports xintq "
+        "net of interest income and sign-inverted (89.8% sign-flip), so the "
+        "two eras do not mean the same thing; the consuming ratio "
+        "interest_pct_operating_income is legacy-only for that reason, while "
+        "this total is published in both eras as each provider's own figure."
+        + _OPERAND_TOTAL_NOTE,
+        ttm_sum("xintq"),
+        inputs=("xintq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "operating_income_ttm",
+        "1",
+        "sum of the 4 most recent quarterly oiadpq. NOTE: oiadpq is a "
+        "per-company classification boundary across the provider changeover "
+        "(44.6% agreement, no remapping above 0.474)." + _OPERAND_TOTAL_NOTE,
+        ttm_sum("oiadpq"),
+        inputs=("oiadpq",),
+        is_operand_total=True,
+    ),
+    QuarterMetric(
+        "gross_profit_ttm",
+        "1",
+        "ERA-DISPATCHED: saleq_ttm - cogsq_ttm - dpq_ttm in the legacy era, "
+        "saleq_ttm - cogsq_ttm in the SimFin era. "
+        + _GROSS_PROFIT_ERA_NOTE
+        + _OPERAND_TOTAL_NOTE
+        + " Golden: KO FY2021 38655 - 13905 - 1452 = 23298.",
+        gross_profit_ttm_metric(),
+        inputs=("saleq", "cogsq", "dpq"),
+        is_operand_total=True,
+    ),
 )
+
+
+def operand_totals_for(
+    metric: QuarterMetric,
+    registry: tuple[QuarterMetric, ...] = None,
+) -> tuple[str, ...]:
+    """Return the operand-total metric ids that belong beneath `metric`.
+
+    A total belongs to a metric when everything the total reads is also read by
+    the metric. That subset rule replaces a field->metric lookup table, so
+    there is nothing to keep in step: adding an operand total wires it up
+    everywhere it applies, and `gross_profit_ttm` attaches to the three ratios
+    built on it without a special case.
+
+    A total never lists itself.
+    """
+    pool = QUARTERLY_REGISTRY if registry is None else registry
+    wanted = set(metric.inputs)
+    return tuple(
+        total.metric_id
+        for total in pool
+        if total.is_operand_total
+        and total.metric_id != metric.metric_id
+        and set(total.inputs) <= wanted
+    )
 
 
 def validate_quarterly_registry(

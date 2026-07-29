@@ -201,7 +201,7 @@ def stylesheet() -> str:
   /* ---- Ranking rows ------------------------------------------------------ */
   .rank-row {{
     display: grid;
-    grid-template-columns: 2.4rem 4.4rem 1fr 4.4rem 4.2rem 4.2rem;
+    grid-template-columns: 2.4rem 4.4rem 12rem 1fr 4.4rem 4.2rem 4.2rem;
     align-items: center;
     gap: .8rem;
     padding: .42rem .55rem;
@@ -224,6 +224,16 @@ def stylesheet() -> str:
   }}
   .rank-n {{ color: var(--pewter); }}
   .rank-ticker {{ font-weight: 700; font-size: 13.5px; }}
+  /* Names vary wildly in length; truncation keeps the evidence bars aligned,
+     which is what the eye is actually scanning down. */
+  .rank-name {{
+    font-family: var(--prose);
+    font-size: 12px;
+    color: var(--pewter);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }}
   .rank-num {{ text-align: right; }}
   .rank-thin {{ color: var(--pewter); }}
 
@@ -340,6 +350,10 @@ def stylesheet() -> str:
     font-size: 10px;
     border-bottom: none;
   }}
+
+  /* Operand totals: a two-column list, so it does not read as a period grid. */
+  table.inputs.totals th.fld {{ width: 16rem; }}
+  table.inputs.totals td {{ text-align: left; }}
 
   /* ---- Absence ----------------------------------------------------------- */
   /* A metric with no data states the absence. An empty chart frame reads as a

@@ -65,6 +65,14 @@ class QuarterMetric:
     # The `fundamentals_quarterly` fields this metric reads. Same contract and
     # same drift guard as `TrendMetric.inputs`; see that docstring.
     inputs: tuple[str, ...] = ()
+    # True for a metric that exists to publish a derived operand total (a TTM
+    # sum, or TTM gross profit) rather than to answer a question of its own.
+    #
+    # The console shows, beneath any metric M, every operand total T whose
+    # `inputs` are a subset of M's. That subset rule is why no field->metric
+    # lookup table exists: it cannot drift, and it picks up gross_profit_ttm
+    # for the ratios built on it without a special case.
+    is_operand_total: bool = False
 
 
 METRICS_QUARTERLY_COLUMNS: tuple[str, ...] = (

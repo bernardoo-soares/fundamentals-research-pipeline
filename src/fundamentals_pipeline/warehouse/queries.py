@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..contracts.company_profile_schema import COMPANIES_COLUMNS
 from ..contracts.fundamentals_annual_schema import ANNUAL_VALUE_COLUMNS
 from ..contracts.scorecard_schema import FISCAL_YEAR_END_QUARTER, QUARTERS_PER_YEAR
 from ..contracts.stage1_fundamentals_schema import (
@@ -49,6 +50,8 @@ METRICS_QUARTERLY_TABLE = "metrics_quarterly"
 FUNDAMENTALS_ANNUAL_TABLE = "fundamentals_annual"
 FUNDAMENTALS_QUARTERLY_TABLE = "fundamentals_quarterly"
 VALUATION_HISTORY_TABLE = "valuation_history"
+# Optional: names and GICS sectors. See `has_companies`.
+COMPANIES_TABLE = "companies"
 
 REQUIRED_TABLES: tuple[str, ...] = (
     SCORES_TABLE,
@@ -124,11 +127,23 @@ def ranking(warehouse_path: str | Path, *, as_of_year: int) -> pd.DataFrame:
     exists because it is the sort key the ranking is honest under; it is
     computed in SQL so the app still computes nothing.
     """
+    # LEFT JOIN, always: a ticker that has left the index has no
+    # current-membership row, and it must still be ranked and shown, by ticker
+    # alone. An INNER JOIN here would silently drop 10 of 494 companies.
+    profile = (
+        f"LEFT JOIN {COMPANIES_TABLE} c ON c.ticker = s.ticker"
+        if has_companies(warehouse_path)
+        else ""
+    )
+    name_columns = (
+        "c.company_name, c.sector" if profile else "NULL AS company_name, NULL AS sector"
+    )
     with _connect(warehouse_path) as conn:
         return conn.execute(
             f"""
             SELECT
               s.ticker,
+              {name_columns},
               s.composite,
               s.coverage_ratio,
               s.coverage_ratio * s.composite AS evidence,
@@ -144,10 +159,61 @@ def ranking(warehouse_path: str | Path, *, as_of_year: int) -> pd.DataFrame:
             FROM {SCORES_TABLE} s
             LEFT JOIN {VALUATION_HISTORY_TABLE} v
               ON v.ticker = s.ticker AND v.fiscal_year = s.as_of_year
+            {profile}
             WHERE s.as_of_year = ?
             ORDER BY s.composite DESC, s.ticker
             """,
             [as_of_year],
+        ).fetchdf()
+
+
+def has_companies(warehouse_path: str | Path) -> bool:
+    """Whether the optional `companies` table has been built.
+
+    Optional rather than required: the console is fully usable without names,
+    and blocking it behind a network fetch would be a worse failure than
+    showing tickers. When it is absent the ranking says so, rather than
+    quietly rendering a blank column.
+    """
+    with _connect(warehouse_path) as conn:
+        return bool(
+            conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_name = ?",
+                [COMPANIES_TABLE],
+            ).fetchone()[0]
+        )
+
+
+def sectors(warehouse_path: str | Path, *, as_of_year: int) -> list[str]:
+    """GICS sectors present among scored tickers, alphabetical.
+
+    Current classification, not the classification as of `as_of_year`; see
+    `contracts/company_profile_schema.py`.
+    """
+    if not has_companies(warehouse_path):
+        return []
+    with _connect(warehouse_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT c.sector
+            FROM {SCORES_TABLE} s
+            JOIN {COMPANIES_TABLE} c ON c.ticker = s.ticker
+            WHERE s.as_of_year = ? AND c.sector IS NOT NULL
+            ORDER BY c.sector
+            """,
+            [as_of_year],
+        ).fetchall()
+    return [row[0] for row in rows]
+
+
+def company(warehouse_path: str | Path, *, ticker: str) -> pd.DataFrame:
+    """One company's identity row, or an empty frame if it has no current one."""
+    if not has_companies(warehouse_path):
+        return pd.DataFrame(columns=list(COMPANIES_COLUMNS))
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"SELECT * FROM {COMPANIES_TABLE} WHERE ticker = ?", [ticker]
         ).fetchdf()
 
 
@@ -356,6 +422,45 @@ def quarterly_inputs(
             ORDER BY field, year, quarter
             """,
             [ticker, end_year, end_year, quarters],
+        ).fetchdf()
+
+
+def quarterly_metric_values(
+    warehouse_path: str | Path,
+    *,
+    ticker: str,
+    metric_ids: tuple[str, ...],
+    year: int,
+    quarter: int = FISCAL_YEAR_END_QUARTER,
+) -> pd.DataFrame:
+    """Published values for named quarterly metrics at one ticker-quarter.
+
+    Used for the operand totals the console shows beneath a criterion. These
+    come from `metrics_quarterly`, so the total on screen is the same
+    versioned, era-guarded, reason-coded figure the engine computed -- not a
+    second derivation of the TTM rule (AGENTS.md S2.6).
+    """
+    if not metric_ids:
+        return pd.DataFrame(
+            columns=[
+                "metric_id",
+                "value",
+                "reason_code",
+                "quality_flag",
+                "metric_version",
+            ]
+        )
+    placeholders = ", ".join("?" for _ in metric_ids)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT metric_id, value, reason_code, quality_flag, metric_version
+            FROM {METRICS_QUARTERLY_TABLE}
+            WHERE ticker = ? AND year = ? AND quarter = ?
+              AND metric_id IN ({placeholders})
+            ORDER BY metric_id
+            """,
+            [ticker, year, quarter, *metric_ids],
         ).fetchdf()
 
 

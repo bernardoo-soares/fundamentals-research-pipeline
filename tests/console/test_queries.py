@@ -341,3 +341,100 @@ def test_no_derived_total_is_returned(warehouse):
     assert not any(
         name in frame.columns for name in ("ttm", "total", "sum", "value_ttm")
     )
+
+
+# --- Company identity -------------------------------------------------------
+
+
+def _add_companies(path) -> None:
+    conn = duckdb.connect(str(path))
+    conn.execute(
+        "CREATE TABLE companies (ticker VARCHAR, company_name VARCHAR, "
+        "sector VARCHAR, sub_industry VARCHAR, headquarters VARCHAR, "
+        "index_added_date DATE, cik VARCHAR, source VARCHAR, "
+        "as_of_date DATE, computed_at TIMESTAMP, pipeline_version VARCHAR)"
+    )
+    # HOLLOW deliberately has no row: it stands for a company that has left
+    # the index and therefore cannot be named.
+    conn.execute(
+        "INSERT INTO companies VALUES ('SOLID', 'Solid Industries', "
+        "'Industrials', 'Conglomerates', 'Omaha', DATE '1990-01-01', '1', "
+        "'wikipedia_sp500_constituents', DATE '2026-07-29', now(), 'c1')"
+    )
+    conn.close()
+
+
+def test_ranking_works_without_the_optional_companies_table(warehouse):
+    """The console must be usable before anyone runs companies-build."""
+    assert Q.has_companies(warehouse) is False
+    frame = Q.ranking(warehouse, as_of_year=2024)
+    assert len(frame) == 2
+    assert frame["company_name"].isna().all()
+    assert Q.sectors(warehouse, as_of_year=2024) == []
+
+
+def test_ranking_joins_names_when_present(warehouse):
+    _add_companies(warehouse)
+    assert Q.has_companies(warehouse) is True
+    frame = Q.ranking(warehouse, as_of_year=2024).set_index("ticker")
+    assert frame.loc["SOLID", "company_name"] == "Solid Industries"
+    assert frame.loc["SOLID", "sector"] == "Industrials"
+
+
+def test_a_company_without_a_current_row_is_kept_and_left_unnamed(warehouse):
+    """An INNER JOIN here would silently drop companies from the ranking."""
+    _add_companies(warehouse)
+    frame = Q.ranking(warehouse, as_of_year=2024).set_index("ticker")
+    assert "HOLLOW" in frame.index
+    assert pd.isna(frame.loc["HOLLOW", "company_name"])
+
+
+def test_sectors_lists_only_those_present_among_scored_tickers(warehouse):
+    _add_companies(warehouse)
+    assert Q.sectors(warehouse, as_of_year=2024) == ["Industrials"]
+
+
+def test_company_returns_an_empty_frame_for_a_departed_ticker(warehouse):
+    _add_companies(warehouse)
+    assert Q.company(warehouse, ticker="HOLLOW").empty
+    assert not Q.company(warehouse, ticker="SOLID").empty
+
+
+# --- Operand totals ---------------------------------------------------------
+
+
+def test_quarterly_metric_values_reads_published_totals(warehouse):
+    conn = duckdb.connect(str(warehouse))
+    conn.execute(
+        "CREATE TABLE metrics_quarterly (ticker VARCHAR, year INTEGER, "
+        "quarter INTEGER, metric_id VARCHAR, value DOUBLE, "
+        "reason_code VARCHAR, quality_flag VARCHAR, source_era VARCHAR, "
+        "metric_version VARCHAR, computed_at TIMESTAMP, "
+        "pipeline_version VARCHAR)"
+    )
+    conn.execute(
+        "INSERT INTO metrics_quarterly VALUES "
+        "('SOLID', 2024, 4, 'revenue_ttm', 100.0, NULL, NULL, 'simfin', '1', "
+        "now(), 'p1'),"
+        "('SOLID', 2024, 4, 'net_income_ttm', NULL, 'mixed_era_window', NULL, "
+        "'simfin', '1', now(), 'p1')"
+    )
+    conn.close()
+
+    frame = Q.quarterly_metric_values(
+        warehouse,
+        ticker="SOLID",
+        metric_ids=("revenue_ttm", "net_income_ttm"),
+        year=2024,
+    ).set_index("metric_id")
+    assert frame.loc["revenue_ttm", "value"] == 100.0
+    # A total the engine refused to compute stays refused; the console shows
+    # the reason rather than a number it summed itself.
+    assert pd.isna(frame.loc["net_income_ttm", "value"])
+    assert frame.loc["net_income_ttm", "reason_code"] == "mixed_era_window"
+
+
+def test_quarterly_metric_values_with_no_ids_returns_empty(warehouse):
+    assert Q.quarterly_metric_values(
+        warehouse, ticker="SOLID", metric_ids=(), year=2024
+    ).empty

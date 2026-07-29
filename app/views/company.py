@@ -15,7 +15,10 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from fundamentals_pipeline.metrics.quarterly_registry import QUARTERLY_REGISTRY
+from fundamentals_pipeline.metrics.quarterly_registry import (
+    QUARTERLY_REGISTRY,
+    operand_totals_for,
+)
 from fundamentals_pipeline.metrics.registry import REGISTRY
 from fundamentals_pipeline.warehouse import queries as Q
 
@@ -52,6 +55,8 @@ INPUTS: dict[str, tuple[str, tuple[str, ...], int]] = {
 TTM_QUARTERS = 4
 
 ERA_MARK = {"legacy_compustat": "legacy", "simfin": "SimFin"}
+
+QUARTERLY_BY_ID = {m.metric_id: m for m in QUARTERLY_REGISTRY}
 
 # How much of a long registry formula to show before the reader has to ask for
 # the rest. Several carry multi-paragraph measurement records.
@@ -139,11 +144,15 @@ def _inputs_table(frame, period_column: str, label) -> str:
 def _render_inputs(warehouse_path, ticker: str, metric_id: str, as_of_year: int):
     """The operands behind one criterion, with their fiscal periods.
 
-    Deliberately shows no derived total. Re-deriving the TTM or window sum here
-    would express the annualisation rule a second time (S2.6), and would let
-    the console display a total across the provider boundary that the metric
-    engine had refused to compute. The derived figure is the metric's own
-    published value, shown beside this.
+    For a quarterly metric this is followed by the TTM totals the metric used,
+    read from `metrics_quarterly` -- never summed here. See
+    `_render_operand_totals`.
+
+    Trend metrics show operands only. Their window aggregates (the 10-year
+    capex and earnings sums behind `capex_pct_net_income_avg10y`, for example)
+    are not published by the engine, so there is nothing honest to display
+    beside them yet; that is recorded as an open item rather than computed in
+    a view.
     """
     declared = INPUTS.get(metric_id)
     if declared is None:
@@ -191,9 +200,66 @@ def _render_inputs(warehouse_path, ticker: str, metric_id: str, as_of_year: int)
 
     st.markdown(
         f'<div class="stat-note">{html.escape(caption)}, exactly as Stage 1 '
-        "stores them. No total is recomputed here: the derived figure is the "
-        "metric's own value above.</div>"
-        + _inputs_table(frame, period, label),
+        "stores them.</div>" + _inputs_table(frame, period, label),
+        unsafe_allow_html=True,
+    )
+    if grain == QUARTERLY_GRAIN:
+        _render_operand_totals(warehouse_path, ticker, metric_id, as_of_year)
+
+
+def _render_operand_totals(
+    warehouse_path, ticker: str, metric_id: str, as_of_year: int
+) -> None:
+    """The TTM totals the metric actually used, as the engine published them.
+
+    These are read from `metrics_quarterly`, never summed here. Adding the
+    quarters up in a view would express the TTM rule a second time (S2.6), and
+    a view would happily add across the provider boundary where the engine
+    nulls the window -- so the console would show a total the engine refused
+    to compute. When that happens, the reason code appears instead of a
+    number, which is the honest rendering.
+    """
+    metric = QUARTERLY_BY_ID.get(metric_id)
+    if metric is None:
+        return
+    wanted = operand_totals_for(metric)
+    if not wanted:
+        return
+    frame = Q.quarterly_metric_values(
+        warehouse_path, ticker=ticker, metric_ids=wanted, year=as_of_year
+    )
+    if frame.empty:
+        return
+
+    rows = []
+    for _, row in frame.iterrows():
+        name = str(row["metric_id"])
+        if C._is_absent(row["value"]):
+            shown = (
+                f'<span class="verdict-na">not computed — '
+                f'{html.escape(C.plain(row["reason_code"]))}</span>'
+            )
+        else:
+            shown = f'<b>{C.num(row["value"], 1)}</b>'
+        flag = (
+            f' <span class="flag">{html.escape(str(row["quality_flag"]))}</span>'
+            if not C._is_absent(row["quality_flag"])
+            else ""
+        )
+        rows.append(
+            f'<tr><th class="fld">{html.escape(name)} '
+            f'<span class="rank-thin">v{html.escape(str(row["metric_version"]))}'
+            f"</span></th><td>{shown}{flag}</td></tr>"
+        )
+
+    st.markdown(
+        '<div class="stat-label" style="margin-top:.8rem">totals the metric '
+        "used, as the engine published them</div>"
+        '<div class="stat-note">Read from metrics_quarterly, not summed here: '
+        "a total computed in a view would express the TTM rule a second time, "
+        "and would add across the provider boundary where the engine nulls the "
+        "window.</div>"
+        f'<table class="inputs totals"><tbody>{"".join(rows)}</tbody></table>',
         unsafe_allow_html=True,
     )
 
@@ -210,9 +276,22 @@ def _render_header(warehouse_path, ticker: str, as_of_year: int) -> bool:
         return False
     row = header.iloc[0]
 
+    profile = Q.company(warehouse_path, ticker=ticker)
+    if profile.empty:
+        # Left the index, so no current-membership row exists. Shown by ticker
+        # alone rather than given an invented name.
+        subtitle = "not a current S&P 500 constituent — no name or sector on file"
+    else:
+        p = profile.iloc[0]
+        subtitle = " · ".join(
+            str(x)
+            for x in (p["company_name"], p["sector"], p["sub_industry"])
+            if not C._is_absent(x)
+        )
     st.markdown(
         f'<div class="assay-wordmark" style="font-size:34px">'
-        f'{html.escape(ticker)}</div>',
+        f'{html.escape(ticker)}</div>'
+        f'<div class="assay-tagline">{html.escape(subtitle)}</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
