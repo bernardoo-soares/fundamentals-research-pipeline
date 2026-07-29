@@ -62,6 +62,9 @@ class QuarterMetric:
     formula: str
     compute: Callable[[Any], list[QuarterPoint]]
     supported_eras: frozenset[str] | None = None
+    # The `fundamentals_quarterly` fields this metric reads. Same contract and
+    # same drift guard as `TrendMetric.inputs`; see that docstring.
+    inputs: tuple[str, ...] = ()
 
 
 METRICS_QUARTERLY_COLUMNS: tuple[str, ...] = (

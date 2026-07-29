@@ -20,7 +20,24 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..contracts.fundamentals_annual_schema import ANNUAL_VALUE_COLUMNS
+from ..contracts.scorecard_schema import FISCAL_YEAR_END_QUARTER, QUARTERS_PER_YEAR
+from ..contracts.stage1_fundamentals_schema import (
+    CORE_RAW_FIELDS,
+    EXTENDED_RAW_FIELDS,
+    SUPPORT_RAW_FIELDS,
+)
 from .connection import open_warehouse
+
+# The column names a metric may declare as an input, taken from the schema
+# contracts rather than restated, so the allow-list cannot drift from the
+# tables (AGENTS.md S2.6).
+ANNUAL_INPUT_COLUMNS: tuple[str, ...] = ANNUAL_VALUE_COLUMNS
+QUARTERLY_INPUT_FIELDS: tuple[str, ...] = (
+    *CORE_RAW_FIELDS,
+    *SUPPORT_RAW_FIELDS,
+    *EXTENDED_RAW_FIELDS,
+)
 
 # Tables the console reads. Named once so a rename is a one-line change and a
 # typo is not spread across a dozen f-strings (AGENTS.md S1.1).
@@ -30,6 +47,7 @@ SCORE_CRITERIA_TABLE = "score_criteria"
 METRICS_TREND_TABLE = "metrics_trend"
 METRICS_QUARTERLY_TABLE = "metrics_quarterly"
 FUNDAMENTALS_ANNUAL_TABLE = "fundamentals_annual"
+FUNDAMENTALS_QUARTERLY_TABLE = "fundamentals_quarterly"
 VALUATION_HISTORY_TABLE = "valuation_history"
 
 REQUIRED_TABLES: tuple[str, ...] = (
@@ -241,6 +259,103 @@ def valuation(
             WHERE ticker = ? AND fiscal_year = ?
             """,
             [ticker, as_of_year],
+        ).fetchdf()
+
+
+def _validate_fields(fields: tuple[str, ...], allowed: frozenset[str]) -> None:
+    """Reject any column name not in the declared contract.
+
+    These names reach a SQL string, so an unvalidated one is an injection
+    seam. They come from the metric registries rather than from a user, but
+    checking is one line and the alternative is trusting an f-string.
+    """
+    unknown = sorted(set(fields) - allowed)
+    if unknown:
+        raise ValueError(f"Not warehouse columns: {unknown}")
+
+
+def annual_inputs(
+    warehouse_path: str | Path,
+    *,
+    ticker: str,
+    fields: tuple[str, ...],
+    start_year: int,
+    end_year: int,
+) -> pd.DataFrame:
+    """Raw annual operands behind a trend metric, one row per year.
+
+    NO DERIVED TOTAL IS RETURNED, DELIBERATELY
+    ------------------------------------------
+    The obvious thing to return alongside these is the window sum or the TTM
+    the metric used. That would be the same rule -- annualisation, TTM, the
+    null policy -- expressed a second time, which AGENTS.md S2.6 calls a
+    defect, and the two would eventually disagree. Worse, the metric engine
+    nulls a window that crosses the provider boundary while a naive SQL sum
+    would happily add across it, so the console would display a total the
+    engine had refused to compute.
+
+    So the audit trail is the operands and their fiscal periods; the derived
+    figure is the metric's own published value, shown beside them.
+    """
+    if not fields:
+        return pd.DataFrame(columns=["fiscal_year", "source_era", "field", "value"])
+    _validate_fields(fields, frozenset(ANNUAL_INPUT_COLUMNS))
+    selected = ", ".join(fields)
+    names = ", ".join(f"'{field}'" for field in fields)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT fiscal_year, source_era, field, value
+            FROM (
+              SELECT fiscal_year, source_era, {selected}
+              FROM {FUNDAMENTALS_ANNUAL_TABLE}
+              WHERE ticker = ? AND fiscal_year BETWEEN ? AND ?
+            )
+            UNPIVOT INCLUDE NULLS (value FOR field IN ({names}))
+            ORDER BY field, fiscal_year
+            """,
+            [ticker, start_year, end_year],
+        ).fetchdf()
+
+
+def quarterly_inputs(
+    warehouse_path: str | Path,
+    *,
+    ticker: str,
+    fields: tuple[str, ...],
+    end_year: int,
+    quarters: int,
+) -> pd.DataFrame:
+    """Raw quarterly operands behind a point-in-time metric, newest last.
+
+    Returns the `quarters` most recent quarters up to and including the fiscal
+    year end, which is the window a TTM metric reads. As with `annual_inputs`,
+    no TTM total is derived here.
+    """
+    if not fields:
+        return pd.DataFrame(
+            columns=["year", "quarter", "source_era", "field", "value"]
+        )
+    _validate_fields(fields, frozenset(QUARTERLY_INPUT_FIELDS))
+    selected = ", ".join(fields)
+    names = ", ".join(f"'{field}'" for field in fields)
+    with _connect(warehouse_path) as conn:
+        return conn.execute(
+            f"""
+            SELECT year, quarter, source_era, field, value
+            FROM (
+              SELECT year, quarter, source_era, {selected}
+              FROM {FUNDAMENTALS_QUARTERLY_TABLE}
+              WHERE ticker = ?
+                AND (year * {QUARTERS_PER_YEAR} + quarter)
+                    <= (? * {QUARTERS_PER_YEAR} + {FISCAL_YEAR_END_QUARTER})
+                AND (year * {QUARTERS_PER_YEAR} + quarter)
+                    >  (? * {QUARTERS_PER_YEAR} + {FISCAL_YEAR_END_QUARTER} - ?)
+            )
+            UNPIVOT INCLUDE NULLS (value FOR field IN ({names}))
+            ORDER BY field, year, quarter
+            """,
+            [ticker, end_year, end_year, quarters],
         ).fetchdf()
 
 

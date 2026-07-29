@@ -307,6 +307,40 @@ def stylesheet() -> str:
      content width and pushes its own score against the right edge. */
   .ev-header {{ max-width: 720px; margin: .1rem 0 1rem; }}
 
+  /* ---- Inputs grid ------------------------------------------------------- */
+  /* The audit trail: raw Stage 1 operands by fiscal period. Figures are
+     tabular so a reader can add them up by eye, which is the point -- the
+     console deliberately re-derives no total of its own. */
+  table.inputs {{
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    margin: .5rem 0 .2rem;
+  }}
+  table.inputs th, table.inputs td {{
+    border-bottom: 1px solid var(--rule);
+    padding: .22rem .4rem;
+    text-align: right;
+    white-space: nowrap;
+  }}
+  table.inputs thead th {{
+    color: var(--pewter);
+    font-weight: 400;
+    font-size: 10px;
+    letter-spacing: .06em;
+    border-bottom: 1px solid var(--ink);
+  }}
+  table.inputs th.fld {{ text-align: left; font-weight: 700; }}
+  /* The provider row marks where the era boundary falls inside the window --
+     the seam that makes a value carry mixed_era_window. */
+  table.inputs tr.era td, table.inputs tr.era th {{
+    color: var(--pewter);
+    font-size: 10px;
+    border-bottom: none;
+  }}
+
   /* ---- Absence ----------------------------------------------------------- */
   /* A metric with no data states the absence. An empty chart frame reads as a
      bug rather than as "the source stopped providing this". */
@@ -334,6 +368,16 @@ def stylesheet() -> str:
     font-variant-numeric: tabular-nums;
   }}
   .stDataFrame {{ font-family: var(--mono); }}
+  /* Expander headers are labels in this interface, not prose. */
+  [data-testid="stExpander"] summary {{
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }}
+  [data-testid="stExpander"] details {{
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }}
 
   /* Quality floor, not announced: visible keyboard focus and honoured
      reduced-motion. */

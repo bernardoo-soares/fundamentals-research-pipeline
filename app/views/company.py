@@ -34,6 +34,24 @@ VERSIONS: dict[str, str] = {
     **{m.metric_id: m.version for m in REGISTRY},
     **{m.metric_id: m.version for m in QUARTERLY_REGISTRY},
 }
+# metric_id -> (grain, declared input columns, window length in years).
+# The registries are the single source for both computation and display
+# (platform spec section 6); the console never writes its own account of what
+# a metric reads.
+TREND_GRAIN = "trend"
+QUARTERLY_GRAIN = "quarterly"
+INPUTS: dict[str, tuple[str, tuple[str, ...], int]] = {
+    **{m.metric_id: (TREND_GRAIN, m.inputs, m.window_length) for m in REGISTRY},
+    **{
+        m.metric_id: (QUARTERLY_GRAIN, m.inputs, 1)
+        for m in QUARTERLY_REGISTRY
+    },
+}
+
+# A TTM metric reads the four quarters ending at the fiscal year end.
+TTM_QUARTERS = 4
+
+ERA_MARK = {"legacy_compustat": "legacy", "simfin": "SimFin"}
 
 # How much of a long registry formula to show before the reader has to ask for
 # the rest. Several carry multi-paragraph measurement records.
@@ -84,6 +102,99 @@ def _trend_chart(frame: pd.DataFrame, metric_id: str) -> alt.Chart:
         .properties(height=CHART_HEIGHT)
         .configure_view(strokeWidth=0)
         .configure(background="white")
+    )
+
+
+def _inputs_table(frame, period_column: str, label) -> str:
+    """Render raw operands as a field x period grid, with the provider era.
+
+    The era row is not decoration: it shows exactly where the provider
+    boundary falls inside the window, which is the thing that makes a value
+    carry `mixed_era_window` or `cross_era_window`. Seeing the seam is how a
+    reader checks that verdict for themselves.
+    """
+    periods = list(dict.fromkeys(frame[period_column].tolist()))
+    head = "".join(f"<th>{html.escape(label(p))}</th>" for p in periods)
+    body = []
+    for field, group in frame.groupby("field", sort=True):
+        by_period = dict(zip(group[period_column], group["value"], strict=False))
+        cells = "".join(
+            f"<td>{C.num(by_period.get(p), 1)}</td>" for p in periods
+        )
+        body.append(f'<tr><th class="fld">{html.escape(str(field))}</th>{cells}</tr>')
+
+    eras = dict(zip(frame[period_column], frame["source_era"], strict=False))
+    era_cells = "".join(
+        f"<td>{html.escape(ERA_MARK.get(str(eras.get(p)), '—'))}</td>"
+        for p in periods
+    )
+    body.append(f'<tr class="era"><th class="fld">provider</th>{era_cells}</tr>')
+
+    return (
+        f'<table class="inputs"><thead><tr><th class="fld"></th>{head}</tr>'
+        f"</thead><tbody>{''.join(body)}</tbody></table>"
+    )
+
+
+def _render_inputs(warehouse_path, ticker: str, metric_id: str, as_of_year: int):
+    """The operands behind one criterion, with their fiscal periods.
+
+    Deliberately shows no derived total. Re-deriving the TTM or window sum here
+    would express the annualisation rule a second time (S2.6), and would let
+    the console display a total across the provider boundary that the metric
+    engine had refused to compute. The derived figure is the metric's own
+    published value, shown beside this.
+    """
+    declared = INPUTS.get(metric_id)
+    if declared is None:
+        C.absent_block(
+            "No inputs registered",
+            f"{metric_id} is not in a metric registry, so its operands are "
+            "not declared.",
+        )
+        return
+    grain, fields, window = declared
+
+    if grain == TREND_GRAIN:
+        frame = Q.annual_inputs(
+            warehouse_path,
+            ticker=ticker,
+            fields=fields,
+            start_year=as_of_year - window + 1,
+            end_year=as_of_year,
+        )
+        period, label = "fiscal_year", lambda p: f"FY{int(p)}"
+        caption = f"annual values across the {window}-year window"
+    else:
+        frame = Q.quarterly_inputs(
+            warehouse_path,
+            ticker=ticker,
+            fields=fields,
+            end_year=as_of_year,
+            quarters=TTM_QUARTERS,
+        )
+        period, label = "quarter", None
+        frame = frame.assign(
+            period=frame["year"].astype(int).astype(str)
+            + "Q"
+            + frame["quarter"].astype(int).astype(str)
+        )
+        period, label = "period", str
+        caption = f"the {TTM_QUARTERS} quarters ending at the fiscal year end"
+
+    if frame.empty:
+        C.absent_block(
+            "No stored inputs for this window",
+            "Stage 1 holds no rows for these periods.",
+        )
+        return
+
+    st.markdown(
+        f'<div class="stat-note">{html.escape(caption)}, exactly as Stage 1 '
+        "stores them. No total is recomputed here: the derived figure is the "
+        "metric's own value above.</div>"
+        + _inputs_table(frame, period, label),
+        unsafe_allow_html=True,
     )
 
 
@@ -238,11 +349,19 @@ def _render_criteria(warehouse_path, ticker: str, as_of_year: int) -> None:
                     f'{html.escape(C.plain(row["quality_flag"]))}</div>',
                     unsafe_allow_html=True,
                 )
-        with st.expander(f"Full formula text for {component_id}"):
-            for _, row in group.iterrows():
-                metric_id = str(row["metric_id"])
-                st.markdown(f"**{metric_id}**")
-                st.text(FORMULAS.get(metric_id, "(no formula registered)"))
+            # The last door: the Stage 1 operands and their fiscal periods.
+            # Collapsed, because 22 criteria of raw figures at once would bury
+            # the scores they belong to.
+            with st.expander(f"Inputs behind {metric_id}"):
+                _render_inputs(warehouse_path, ticker, metric_id, as_of_year)
+                st.markdown(
+                    '<div class="stat-label" style="margin-top:.9rem">'
+                    "full formula, from the metric registry</div>"
+                    f'<div class="led-formula">'
+                    f"{html.escape(FORMULAS.get(metric_id, '(none registered)'))}"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
 
 def _render_trends(warehouse_path, ticker: str) -> None:

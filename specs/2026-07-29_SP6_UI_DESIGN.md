@@ -188,7 +188,65 @@ Full suite: 469 tests, `ruff` and `compileall` clean.
    Deferred so slice 1 stays strictly read-only.
 3. **Company names and sectors** — M6: no such data exists in the warehouse.
    Adding them means adding a source, not a view.
-4. **The drilldown's "inputs row"** (platform spec §8.2.2: the raw Stage 1
-   values and their fiscal periods behind each metric) is **not yet built**.
-   The formula, value, points, verdict, flag and reason are all present; the
-   raw operands are not. `queries.annual_fundamentals` exists for it.
+4. ~~The drilldown's "inputs row"~~ — **built 2026-07-29**, see §8.
+
+## 8. The inputs row (platform spec §8.2.2)
+
+Each criterion now opens onto the Stage 1 operands behind it, with their
+fiscal periods and the provider that served each one.
+
+### 8.1 How the console knows which fields a metric reads
+
+Declaratively, on the registry entry: `TrendMetric.inputs` and
+`QuarterMetric.inputs`. Parsing the prose formula to find them would be
+guesswork presented as provenance.
+
+A declaration that drifted from its compute function would put a false audit
+trail on screen — in the one place that exists to prevent false numbers — so
+it is not taken on trust. `tests/metrics/test_declared_inputs.py` computes
+every metric twice: once on a fully populated frame, once with every
+**undeclared** column nulled, and requires identical output. A metric that
+secretly reads an undeclared column fails.
+
+That test also guards itself: a second check requires each metric to produce at
+least one real value on the fixture, because an all-null comparison would pass
+vacuously. It immediately caught a fixture where revenue did not dominate the
+cost lines, so the three gross-profit metrics returned only `negative_base` and
+their drift checks were proving nothing.
+
+Both registry validators now reject an empty `inputs`.
+
+### 8.2 No derived total is shown, deliberately
+
+The obvious companion figure is the TTM or window sum. It is **not** rendered,
+for two reasons:
+
+1. It would express the annualisation rule a second time, which S2.6 calls a
+   defect, and the two would eventually disagree.
+2. The metric engine nulls a window that crosses the provider boundary, while a
+   naive SQL sum would happily add across it — so the console would display a
+   total the engine had refused to compute.
+
+The audit trail is the operands; the derived figure is the metric's own
+published value, shown directly above them.
+
+### 8.3 The provider row
+
+Each grid carries a `provider` row marking which era served each period. That
+is not decoration: it shows exactly where the boundary falls inside the window,
+which is what makes a value carry `mixed_era_window` or `cross_era_window`.
+NVDA's `buyback_years_10y` grid shows legacy through FY2022 and SimFin for
+FY2023–24 — the reader can check the flag's verdict themselves.
+
+### 8.4 Verified by hand from the screen
+
+NVDA FY2024 `net_margin` reads **0.5585**, and the grid shows the four
+quarters: `niq` 14,881 + 16,599 + 19,309 + 22,091 = 72,880; `saleq` 26,044 +
+30,040 + 35,082 + 39,331 = 130,497; 72,880 / 130,497 = **0.55848**. That is the
+spec's "hand-verifiable in under a minute" requirement, done.
+
+Column names reach a SQL string, so they are checked against the schema
+contracts before use; a name outside the contract raises rather than
+interpolating. Tested.
+
+Suite after this addition: **538 tests**.

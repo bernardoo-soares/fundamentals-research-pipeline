@@ -46,30 +46,33 @@ _GROSS_PROFIT_ERA_NOTE = (
 
 QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
     QuarterMetric(
-        "net_margin", "1", "niq_ttm / saleq_ttm", ttm_ratio("niq", "saleq")
+        "net_margin", "1", "niq_ttm / saleq_ttm", ttm_ratio("niq", "saleq"), inputs=("niq", "saleq")
     ),
-    QuarterMetric("roa", "1", "niq_ttm / atq_latest", ttm_over_stock("niq", "atq")),
-    QuarterMetric("roe", "1", "niq_ttm / ceqq_latest", ttm_over_stock("niq", "ceqq")),
+    QuarterMetric("roa", "1", "niq_ttm / atq_latest", ttm_over_stock("niq", "atq"), inputs=("niq", "atq")),
+    QuarterMetric("roe", "1", "niq_ttm / ceqq_latest", ttm_over_stock("niq", "ceqq"), inputs=("niq", "ceqq")),
     QuarterMetric(
         "debt_to_equity_adj",
         "1",
         "ltq / (ceqq + tstkq)",
         debt_to_equity_adj_metric(),
+        inputs=("ltq", "ceqq", "tstkq"),
     ),
     QuarterMetric(
-        "current_ratio", "1", "actq_latest / lctq_latest", stock_ratio("actq", "lctq")
+        "current_ratio", "1", "actq_latest / lctq_latest", stock_ratio("actq", "lctq"), inputs=("actq", "lctq")
     ),
     QuarterMetric(
         "st_lt_debt_ratio",
         "1",
         "dlcq_latest / dlttq_latest",
         stock_ratio("dlcq", "dlttq"),
+        inputs=("dlcq", "dlttq"),
     ),
     QuarterMetric(
         "lt_debt_payback_years",
         "1",
         "dlttq_latest / niq_ttm",
         stock_over_ttm("dlttq", "niq"),
+        inputs=("dlttq", "niq"),
     ),
     QuarterMetric(
         "interest_pct_operating_income",
@@ -83,6 +86,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "with era_not_supported rather than false.)",
         ttm_ratio("xintq", "oiadpq"),
         supported_eras=_LEGACY_ONLY,
+        inputs=("xintq", "oiadpq"),
     ),
     QuarterMetric(
         "eps_ttm",
@@ -96,6 +100,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "Shares (Basic)), so a window spanning the boundary is nulled "
         "mixed_era_window by per-field purity.",
         ttm_sum("epspxq"),
+        inputs=("epspxq",),
     ),
     QuarterMetric(
         "net_income_ttm",
@@ -107,12 +112,14 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "close of 198.74 against a real ~4,900). market_cap / net_income is "
         "invariant to split adjustment because the same basis cancels.",
         ttm_sum("niq"),
+        inputs=("niq",),
     ),
     QuarterMetric(
         "treasury_stock_present",
         "1",
         "1 if tstkq_latest > 0 else 0",
         presence_flag("tstkq", threshold=TREASURY_PRESENCE_THRESHOLD),
+        inputs=("tstkq",),
     ),
     QuarterMetric(
         "gross_margin",
@@ -123,6 +130,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "0.602716, exactly Coca-Cola's published gross margin; the uncorrected "
         "(saleq - cogsq) form gives 0.640279, overstated by 3.76pp.",
         gross_margin_metric(),
+        inputs=("saleq", "cogsq", "dpq"),
     ),
     QuarterMetric(
         "sga_pct_gross_profit",
@@ -133,12 +141,14 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "before depreciation, so it understates published SG&A (KO FY2021 "
         "11,964 against a published 12,144, a 1.5% shortfall).",
         ttm_over_gross_profit("xsgaq"),
+        inputs=("xsgaq", "saleq", "cogsq", "dpq"),
     ),
     QuarterMetric(
         "rd_pct_gross_profit",
         "2",
         "xrdq_ttm / gross_profit_ttm. " + _GROSS_PROFIT_ERA_NOTE,
         ttm_over_gross_profit("xrdq"),
+        inputs=("xrdq", "saleq", "cogsq", "dpq"),
     ),
     QuarterMetric(
         "dep_pct_gross_profit",
@@ -151,6 +161,7 @@ QUARTERLY_REGISTRY: tuple[QuarterMetric, ...] = (
         "uncorrected gross-profit denominator (1452 / 24750 = 0.058667), so the "
         "catalog's anchor and its formula disagreed with each other.",
         ttm_over_gross_profit("dpq"),
+        inputs=("dpq", "saleq", "cogsq"),
     ),
 )
 
@@ -172,6 +183,12 @@ def validate_quarterly_registry(
         if metric.metric_id in seen:
             raise ValueError(f"Duplicate metric_id in registry: {metric.metric_id}")
         seen.add(metric.metric_id)
+        if not metric.inputs:
+            raise ValueError(
+                f"{metric.metric_id}: declares no inputs. The console publishes "
+                "that list as the value's audit trail; an empty one would "
+                "render a number with no visible provenance."
+            )
         if metric.supported_eras is not None:
             if not metric.supported_eras:
                 raise ValueError(

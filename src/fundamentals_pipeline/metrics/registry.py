@@ -41,18 +41,22 @@ REGISTRY: tuple[TrendMetric, ...] = (
     TrendMetric(
         "revenue_cagr_2y", "1", 2, "CAGR_2(saleq_annual)",
         cagr_metric(col("saleq_annual"), 2),
+        inputs=("saleq_annual",),
     ),
     TrendMetric(
         "revenue_cagr_4y", "1", 4, "CAGR_4(saleq_annual)",
         cagr_metric(col("saleq_annual"), 4),
+        inputs=("saleq_annual",),
     ),
     TrendMetric(
         "revenue_cagr_10y", "1", 10, "CAGR_10(saleq_annual)",
         cagr_metric(col("saleq_annual"), 10),
+        inputs=("saleq_annual",),
     ),
     TrendMetric(
         "retained_earnings_cagr_10y", "1", 10, "CAGR_10(req_q4)",
         cagr_metric(col("req_q4"), 10),
+        inputs=("req_q4",),
     ),
     TrendMetric(
         "eps_up_year_fraction_10y", "3", 10,
@@ -83,16 +87,19 @@ REGISTRY: tuple[TrendMetric, ...] = (
             STANDARD_WINDOW_SPAN,
             flag=ReasonCode.EPS_BASIS_UNVERIFIED,
         ),
+        inputs=("epspxq_annual",),
     ),
     TrendMetric(
         "net_income_up_year_fraction_10y", "1", 10,
         "fraction of YoY increases in niq_annual over the 10y window",
         up_year_fraction_metric(col("niq_annual"), 10),
+        inputs=("niq_annual",),
     ),
     TrendMetric(
         "net_margin_ge20_years_10y", "1", 10,
         "fraction of 10y window years with niq_annual/saleq_annual > 0.20",
         consistency_fraction_metric(ratio("niq_annual", "saleq_annual"), 0.20, 10),
+        inputs=("niq_annual", "saleq_annual"),
     ),
     TrendMetric(
         "buyback_years_10y", "2", 10,
@@ -111,11 +118,13 @@ REGISTRY: tuple[TrendMetric, ...] = (
             STANDARD_WINDOW_SPAN,
             flag=ReasonCode.CROSS_ERA_WINDOW,
         ),
+        inputs=("prstkcy_annual",),
     ),
     TrendMetric(
         "dividend_payer_years_10y", "2", 10,
         "count of 10y window years with dvy_annual > 0",
         count_years_metric(col("dvy_annual"), 0.0, 10),
+        inputs=("dvy_annual",),
     ),
     TrendMetric(
         "gross_margin_ge40_years_10y", "1", GROSS_MARGIN_WINDOW,
@@ -138,6 +147,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
             GROSS_MARGIN_WINDOW - 1,
         ),
         requires_single_era=True,
+        inputs=("saleq_annual", "cogsq_annual", "dpq_annual"),
     ),
     TrendMetric(
         "negative_equity_strong_earnings", "1", STANDARD_WINDOW,
@@ -156,6 +166,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
             STANDARD_WINDOW,
             min_profitable_years=NEGATIVE_EQUITY_MIN_PROFITABLE_YEARS,
         ),
+        inputs=("ceqq_q4", "niq_annual"),
     ),
     TrendMetric(
         "capex_pct_net_income_avg10y", "1", STANDARD_WINDOW,
@@ -178,6 +189,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
             STANDARD_WINDOW - 1,
         ),
         requires_single_era=True,
+        inputs=("capxy_annual", "niq_annual"),
     ),
     TrendMetric(
         "receivables_pct_sales_trend_10y", "1", STANDARD_WINDOW,
@@ -194,6 +206,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
             STANDARD_WINDOW - 1,
         ),
         requires_single_era=True,
+        inputs=("rectq_q4", "saleq_annual"),
     ),
     TrendMetric(
         "inventory_earnings_correspondence_10y", "1", STANDARD_WINDOW,
@@ -208,6 +221,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
         direction_correspondence_metric(
             col("invtq_q4"), col("niq_annual"), STANDARD_WINDOW
         ),
+        inputs=("invtq_q4", "niq_annual"),
     ),
     TrendMetric(
         "goodwill_trend", "1", STANDARD_WINDOW,
@@ -226,6 +240,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
             STANDARD_WINDOW - 1,
         ),
         requires_single_era=True,
+        inputs=("gdwlq_q4",),
     ),
 )
 
@@ -248,6 +263,13 @@ def validate_registry(registry: tuple[TrendMetric, ...] = REGISTRY) -> None:
                 f"{metric.metric_id}: requires_single_era=True but its compute "
                 "function is not wrapped by windows.require_single_era, so the "
                 "declaration would have no effect."
+            )
+        if not metric.inputs:
+            raise ValueError(
+                f"{metric.metric_id}: declares no inputs. Every metric reads at "
+                "least one annual column, and the console publishes that list "
+                "as the value's audit trail; an empty one would render a "
+                "number with no visible provenance."
             )
 
 

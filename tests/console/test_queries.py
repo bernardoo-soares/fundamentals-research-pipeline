@@ -109,8 +109,25 @@ def _seed(path) -> None:
     )
     conn.execute(
         "INSERT INTO fundamentals_annual VALUES "
+        "('SOLID', 2022, 'legacy_compustat', 4, true, 80.0, 12.0, 1.2, 40.0, "
+        "160.0, 25.0, 30.0),"
+        "('SOLID', 2023, 'simfin', 4, true, 90.0, 16.0, 1.6, 45.0, 180.0, "
+        "28.0, 35.0),"
         "('SOLID', 2024, 'simfin', 4, true, 100.0, 20.0, 2.0, 50.0, 200.0, "
         "30.0, 40.0)"
+    )
+    conn.execute(
+        "CREATE TABLE fundamentals_quarterly (ticker VARCHAR, year INTEGER, "
+        "quarter INTEGER, source_era VARCHAR, niq DOUBLE, saleq DOUBLE, "
+        "atq DOUBLE)"
+    )
+    conn.execute(
+        "INSERT INTO fundamentals_quarterly VALUES "
+        "('SOLID', 2023, 4, 'simfin', 3.0, 20.0, 190.0),"
+        "('SOLID', 2024, 1, 'simfin', 4.0, 22.0, 195.0),"
+        "('SOLID', 2024, 2, 'simfin', 5.0, 24.0, 197.0),"
+        "('SOLID', 2024, 3, 'simfin', 5.5, 26.0, 199.0),"
+        "('SOLID', 2024, 4, 'simfin', 5.5, 28.0, 200.0)"
     )
     conn.close()
 
@@ -225,3 +242,102 @@ def test_valuation_returns_the_reason_when_the_price_is_missing(warehouse):
     frame = Q.valuation(warehouse, ticker="HOLLOW", as_of_year=2024)
     assert pd.isna(frame.iloc[0]["pe_ttm"])
     assert frame.iloc[0]["reason_code"] == "price_unavailable"
+
+
+# --- The drilldown's inputs row --------------------------------------------
+
+
+def test_annual_inputs_returns_one_row_per_field_and_year(warehouse):
+    frame = Q.annual_inputs(
+        warehouse,
+        ticker="SOLID",
+        fields=("saleq_annual", "niq_annual"),
+        start_year=2022,
+        end_year=2024,
+    )
+    assert len(frame) == 6  # 2 fields x 3 years
+    assert set(frame["field"]) == {"saleq_annual", "niq_annual"}
+    saleq = frame[frame["field"] == "saleq_annual"].set_index("fiscal_year")
+    assert saleq.loc[2024, "value"] == 100.0
+    assert saleq.loc[2022, "value"] == 80.0
+
+
+def test_annual_inputs_carries_the_provider_era_per_year(warehouse):
+    """The era row is how a reader checks a mixed_era_window verdict."""
+    frame = Q.annual_inputs(
+        warehouse,
+        ticker="SOLID",
+        fields=("saleq_annual",),
+        start_year=2022,
+        end_year=2024,
+    )
+    eras = dict(zip(frame["fiscal_year"], frame["source_era"], strict=False))
+    assert eras[2022] == "legacy_compustat"
+    assert eras[2024] == "simfin"
+
+
+def test_annual_inputs_keeps_null_years_as_rows(warehouse):
+    """A year with no stored value must still appear, or the gap is invisible."""
+    frame = Q.annual_inputs(
+        warehouse,
+        ticker="SOLID",
+        fields=("saleq_annual",),
+        start_year=2020,
+        end_year=2024,
+    )
+    # 2020 and 2021 have no fundamentals_annual row at all, so they are absent;
+    # what matters is that present rows are never dropped for being null.
+    assert set(frame["fiscal_year"]) == {2022, 2023, 2024}
+
+
+def test_quarterly_inputs_returns_the_ttm_window_ending_at_year_end(warehouse):
+    frame = Q.quarterly_inputs(
+        warehouse, ticker="SOLID", fields=("niq", "saleq"), end_year=2024, quarters=4
+    )
+    quarters = sorted(set(zip(frame["year"], frame["quarter"], strict=False)))
+    assert quarters == [(2024, 1), (2024, 2), (2024, 3), (2024, 4)]
+    assert 2023 not in set(frame["year"])
+
+
+def test_quarterly_inputs_window_can_reach_back_across_a_year(warehouse):
+    frame = Q.quarterly_inputs(
+        warehouse, ticker="SOLID", fields=("niq",), end_year=2024, quarters=5
+    )
+    quarters = sorted(set(zip(frame["year"], frame["quarter"], strict=False)))
+    assert quarters[0] == (2023, 4)
+
+
+def test_inputs_reject_a_column_outside_the_contract(warehouse):
+    """These names reach a SQL string, so the allow-list is not optional."""
+    with pytest.raises(ValueError, match="Not warehouse columns"):
+        Q.annual_inputs(
+            warehouse,
+            ticker="SOLID",
+            fields=("saleq_annual; DROP TABLE scores",),
+            start_year=2022,
+            end_year=2024,
+        )
+    with pytest.raises(ValueError, match="Not warehouse columns"):
+        Q.quarterly_inputs(
+            warehouse, ticker="SOLID", fields=("nope",), end_year=2024, quarters=4
+        )
+
+
+def test_empty_field_list_returns_an_empty_frame_not_broken_sql(warehouse):
+    assert Q.annual_inputs(
+        warehouse, ticker="SOLID", fields=(), start_year=2022, end_year=2024
+    ).empty
+    assert Q.quarterly_inputs(
+        warehouse, ticker="SOLID", fields=(), end_year=2024, quarters=4
+    ).empty
+
+
+def test_no_derived_total_is_returned(warehouse):
+    """S2.6: re-deriving the TTM here would express the rule a second time."""
+    frame = Q.quarterly_inputs(
+        warehouse, ticker="SOLID", fields=("niq",), end_year=2024, quarters=4
+    )
+    assert set(frame.columns) == {"year", "quarter", "source_era", "field", "value"}
+    assert not any(
+        name in frame.columns for name in ("ttm", "total", "sum", "value_ttm")
+    )

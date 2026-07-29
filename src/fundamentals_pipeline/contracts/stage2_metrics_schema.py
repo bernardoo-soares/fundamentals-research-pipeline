@@ -66,6 +66,17 @@ class TrendMetric:
     formula: str
     compute: Callable[[Any], list[MetricPoint]]
     requires_single_era: bool = False
+    # The `fundamentals_annual` columns this metric reads, declared rather than
+    # inferred. The console shows them as the audit trail behind each value
+    # ("every number is a door", platform spec 8.2), and parsing the prose
+    # formula to find them would be guesswork presented as provenance.
+    #
+    # A declaration that drifts from the compute function would be a false
+    # number in the one place that exists to prevent false numbers, so it is
+    # not taken on trust: `tests/metrics/test_declared_inputs.py` re-runs every
+    # metric against a frame holding only its declared inputs and requires
+    # byte-identical output.
+    inputs: tuple[str, ...] = ()
 
 
 METRICS_TREND_COLUMNS: tuple[str, ...] = (
