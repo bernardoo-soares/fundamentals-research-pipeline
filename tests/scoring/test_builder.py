@@ -77,6 +77,7 @@ def _seed(
             "metric_id": metric_id,
             "value": value,
             "reason_code": None if value is not None else "insufficient_history",
+            "quality_flag": None,
         }
         for metric_id, value in trend.items()
     ]
@@ -111,7 +112,7 @@ def _seed(
     conn.execute(
         "CREATE TABLE metrics_trend "
         "(ticker VARCHAR, as_of_year INTEGER, metric_id VARCHAR, "
-        "value DOUBLE, reason_code VARCHAR)"
+        "value DOUBLE, reason_code VARCHAR, quality_flag VARCHAR)"
     )
     conn.execute(
         "CREATE TABLE metrics_quarterly "

@@ -138,6 +138,53 @@ def require_single_era(compute: ComputeFn, span: int) -> ComputeFn:
     return _compute
 
 
+def flag_mixed_era(compute: ComputeFn, span: int, *, flag: str) -> ComputeFn:
+    """Flag, rather than null, any point whose window spans more than one era.
+
+    The softer sibling of `require_single_era`, for the case where the
+    cross-era divergence was MEASURED and found mild enough to publish. Nulling
+    there would discard a mostly-correct value and a genuine Buffett criterion;
+    publishing it unmarked would hide a known limitation from the UI. So the
+    value ships with the limitation attached to it.
+
+    `span` follows the same convention as `require_single_era`: the number of
+    years before `as_of` the window covers.
+
+    A point that is already null keeps its reason and gains no flag -- a flag
+    on an absent value has nothing to qualify, and `validate_quality_flag`
+    rejects it.
+    """
+
+    def _compute(frame: pd.DataFrame) -> list[MetricPoint]:
+        points = compute(frame)
+
+        def _flagged(point: MetricPoint) -> MetricPoint:
+            if point.value is None:
+                return point
+            return MetricPoint(
+                point.as_of_year,
+                point.value,
+                point.reason_code,
+                point.window_years_present,
+                flag,
+            )
+
+        if SOURCE_ERA_COLUMN not in frame.columns:
+            # Provenance unavailable: flag rather than assume purity, matching
+            # `require_single_era`'s refusal to assume.
+            return [_flagged(point) for point in points]
+
+        eras = frame.set_index("fiscal_year").sort_index()[SOURCE_ERA_COLUMN]
+        out: list[MetricPoint] = []
+        for point in points:
+            window = eras.loc[point.as_of_year - span : point.as_of_year]
+            mixed = window.isna().any() or window.dropna().nunique() > 1
+            out.append(_flagged(point) if mixed else point)
+        return out
+
+    return _compute
+
+
 def cagr_metric(series_fn: SeriesFn, n: int) -> ComputeFn:
     """CAGR over n years using the two endpoints (spec 6.1.2)."""
 

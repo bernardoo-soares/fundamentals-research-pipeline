@@ -461,6 +461,12 @@ def _build_family_canonical(frame: pd.DataFrame, *, family: str) -> pd.DataFrame
     out["prstkcy"] = _positive_outflow(frame, "Cash from (Repurchase of) Equity__annual")
     out["dvy"] = _positive_outflow(frame, "Dividends Paid__annual")
     out["cshopq"] = _empty_numeric_series(frame)
+    # SimFin publishes no split adjustment factor. Null, never 1: an absent
+    # factor means the basis is unknown, not that it is known to be unchanged.
+    # SimFin restates share counts for some tickers and not others (measured
+    # 2026-07-29: 15 of 20 boundary splitters agree with the ajexq-adjusted
+    # legacy basis, 5 do not), so a default of 1 would assert something false.
+    out["ajexq"] = _empty_numeric_series(frame)
     out["ltq"] = _numeric_series(frame, "Total Liabilities")
     out["dpq"] = _numeric_series(frame, SIMFIN_CASHFLOW_DA_COLUMN)
     out[SOURCE_FAMILY_COLUMN] = family

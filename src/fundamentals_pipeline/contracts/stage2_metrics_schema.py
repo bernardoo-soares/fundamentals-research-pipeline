@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from .metric_reason_codes import (  # re-exported for existing importers
+    QUALITY_FLAGS,
     REASON_CODES,
     ReasonCode,
+    validate_quality_flag,
     validate_value_xor_reason,
 )
 
@@ -21,6 +23,7 @@ __all__ = [
     "METRICS_PIPELINE_VERSION",
     "METRICS_TREND_COLUMNS",
     "MetricPoint",
+    "QUALITY_FLAGS",
     "REASON_CODES",
     "ReasonCode",
     "TrendMetric",
@@ -38,9 +41,13 @@ class MetricPoint:
     value: float | None
     reason_code: str | None
     window_years_present: int
+    # Advisory, and defaulted so every existing construction site stays valid:
+    # a metric that declares no known limitation emits None, exactly as before.
+    quality_flag: str | None = None
 
     def __post_init__(self) -> None:
         validate_value_xor_reason(self.value, self.reason_code)
+        validate_quality_flag(self.value, self.quality_flag)
 
 
 @dataclass(frozen=True)
@@ -67,6 +74,7 @@ METRICS_TREND_COLUMNS: tuple[str, ...] = (
     "metric_id",
     "value",
     "reason_code",
+    "quality_flag",
     "window_length",
     "window_years_present",
     "metric_version",
@@ -84,6 +92,7 @@ def create_metrics_trend_ddl() -> str:
         "  metric_id VARCHAR NOT NULL,\n"
         "  value DOUBLE,\n"
         "  reason_code VARCHAR,\n"
+        "  quality_flag VARCHAR,\n"
         "  window_length INTEGER,\n"
         "  window_years_present INTEGER,\n"
         "  metric_version VARCHAR,\n"

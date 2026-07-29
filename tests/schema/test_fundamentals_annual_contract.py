@@ -9,6 +9,7 @@ from fundamentals_pipeline.contracts.fundamentals_annual_schema import (
     YTD_ANNUAL_FIELDS,
 )
 from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
+    ADJUSTMENT_FACTOR_FIELDS,
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
     SUPPORT_RAW_FIELDS,
@@ -16,11 +17,24 @@ from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
 
 
 def test_classification_partitions_all_stage1_raw_fields() -> None:
-    raw = set(CORE_RAW_FIELDS) | set(SUPPORT_RAW_FIELDS) | set(EXTENDED_RAW_FIELDS)
+    # `ajexq` is deliberately not annualised. It is neither a flow to sum nor a
+    # stock to read at Q4: it is the factor that puts the per-share fields onto
+    # one basis, and it has already done its work by the time Stage 1 is
+    # published. Carrying an `ajexq_annual` would invite someone to apply it a
+    # second time.
+    raw = (
+        set(CORE_RAW_FIELDS) | set(SUPPORT_RAW_FIELDS) | set(EXTENDED_RAW_FIELDS)
+    ) - set(ADJUSTMENT_FACTOR_FIELDS)
     classified = set(FLOW_FIELDS) | set(YTD_ANNUAL_FIELDS) | set(STOCK_FIELDS)
     assert classified == raw
     # disjoint: no field in two classes
     assert len(FLOW_FIELDS) + len(YTD_ANNUAL_FIELDS) + len(STOCK_FIELDS) == len(raw)
+
+
+def test_adjustment_factor_is_not_annualised() -> None:
+    for field in ADJUSTMENT_FACTOR_FIELDS:
+        assert f"{field}_annual" not in ANNUAL_VALUE_COLUMNS
+        assert f"{field}_q4" not in ANNUAL_VALUE_COLUMNS
 
 
 def test_classification_counts() -> None:

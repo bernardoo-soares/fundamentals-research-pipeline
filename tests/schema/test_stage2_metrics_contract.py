@@ -35,6 +35,12 @@ def test_reason_codes_closed_set() -> None:
         # metric is not defined in this row's provider era, so it is not
         # computed there at all (see metrics/quarterly.apply_era_restriction)
         "era_not_supported",
+        # window crosses the provider boundary for a field whose divergence was
+        # measured as mild enough to publish; the value is real and flagged
+        "cross_era_window",
+        # per-share window reaches into the SimFin era, which publishes no split
+        # adjustment factor, so the share basis cannot be verified there
+        "eps_basis_unverified",
     } == set(REASON_CODES)
 
 
@@ -56,6 +62,7 @@ def test_metrics_trend_columns_and_ddl(tmp_path) -> None:
         "metric_id",
         "value",
         "reason_code",
+        "quality_flag",
         "window_length",
         "window_years_present",
         "metric_version",

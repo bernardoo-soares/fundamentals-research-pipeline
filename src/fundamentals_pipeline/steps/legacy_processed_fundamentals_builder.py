@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from ..contracts.stage1_fundamentals_schema import (
+    ADJUSTMENT_FACTOR_FIELDS,
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
     STAGE1_RAW_COLUMNS,
@@ -22,8 +23,13 @@ from ..contracts.stage1_fundamentals_schema import (
 )
 from ..core.logging import get_logger
 from ..core.settings import get_settings
+from .per_share_basis_normalizer import normalize_per_share_basis
 
 LOG = get_logger(__name__)
+
+# The legacy era's cumulative split / stock-dividend adjustment factor. Declared
+# once here rather than spelled inline at each use (AGENTS.md S1.1).
+(LEGACY_SPLIT_FACTOR_FIELD,) = ADJUSTMENT_FACTOR_FIELDS
 
 LEGACY_STAGE1_FIELDS: tuple[str, ...] = (
     *CORE_RAW_FIELDS,
@@ -244,10 +250,29 @@ def _prepare_legacy_frame(
 
     See AGENTS.md S4.2 (no imputation, ever) and
     contracts/field_era_semantics.py for the declared per-era semantics.
+
+    One normalization IS applied: per-share fields are divided by `ajexq` so the
+    series sits on a single split basis. That is not imputation -- it reads a
+    factor the provider publishes for exactly this purpose, and the as-reported
+    figure stays recoverable because `ajexq` is itself published. See
+    steps/per_share_basis_normalizer.py.
     """
     df = _apply_source_column_overrides(df, source_file=source_file)
     df = _ensure_stage1_fields(df)
-    return _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
+    df = _coerce_numeric_columns(df, LEGACY_STAGE1_FIELDS)
+    df, report = normalize_per_share_basis(df, factor_column=LEGACY_SPLIT_FACTOR_FIELD)
+    nulled = int(report["rows_nulled_no_factor"].sum()) if not report.empty else 0
+    if nulled:
+        # Measured 2026-07-29 across all 1,478 legacy files: zero rows have an
+        # EPS without a factor. A non-zero count here means the extract changed.
+        LOG.warning(
+            "Nulled %d per-share value(s) in %s: %r is null, zero or absent, so "
+            "the split basis is unknown.",
+            nulled,
+            source_file or "<unknown file>",
+            LEGACY_SPLIT_FACTOR_FIELD,
+        )
+    return df
 
 
 def _load_legacy_file(path: Path, ticker_fallback: str) -> pd.DataFrame:

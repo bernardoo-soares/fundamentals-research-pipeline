@@ -11,17 +11,22 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .metric_reason_codes import ReasonCode, validate_value_xor_reason
-
-METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.1"
-
-# Advisory flags that co-exist with a present value. Distinct from reason codes,
-# which explain a null. `tstk_unavailable` records that debt_to_equity_adj was
-# computed without the treasury-stock add-back; the value is still real.
-QUALITY_FLAGS: frozenset[str] = frozenset(
-    {ReasonCode.TSTK_UNAVAILABLE, ReasonCode.DA_ALLOCATION_ASSUMED}
+from .metric_reason_codes import (  # QUALITY_FLAGS re-exported for importers
+    QUALITY_FLAGS,
+    validate_quality_flag,
+    validate_value_xor_reason,
 )
 
+__all__ = [
+    "METRICS_QUARTERLY_COLUMNS",
+    "METRICS_QUARTERLY_PIPELINE_VERSION",
+    "QUALITY_FLAGS",
+    "QuarterMetric",
+    "QuarterPoint",
+    "create_metrics_quarterly_ddl",
+]
+
+METRICS_QUARTERLY_PIPELINE_VERSION = "metrics-quarterly-1.1"
 
 @dataclass(frozen=True)
 class QuarterPoint:
@@ -36,11 +41,7 @@ class QuarterPoint:
 
     def __post_init__(self) -> None:
         validate_value_xor_reason(self.value, self.reason_code)
-        if self.quality_flag is not None:
-            if self.value is None:
-                raise ValueError("quality_flag requires a non-null value.")
-            if self.quality_flag not in QUALITY_FLAGS:
-                raise ValueError(f"Unknown quality_flag: {self.quality_flag!r}")
+        validate_quality_flag(self.value, self.quality_flag)
 
 
 @dataclass(frozen=True)

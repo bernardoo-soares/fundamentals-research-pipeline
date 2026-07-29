@@ -79,7 +79,7 @@ def _load_readings(conn) -> dict[TickerYear, dict[str, MetricReading]]:
     measurement.
     """
     trend_rows = conn.execute(
-        f"SELECT ticker, as_of_year, metric_id, value, reason_code, NULL "
+        f"SELECT ticker, as_of_year, metric_id, value, reason_code, quality_flag "
         f"FROM {_TREND_TABLE}"
     ).fetchall()
     quarterly_rows = conn.execute(

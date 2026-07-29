@@ -13,6 +13,7 @@ from fundamentals_pipeline.metrics.windows import (
     consistency_fraction_metric,
     count_years_metric,
     direction_correspondence_metric,
+    flag_mixed_era,
     negative_equity_with_strong_earnings_metric,
     ratio,
     require_single_era,
@@ -337,3 +338,61 @@ def test_consecutive_pairs_never_bridges_a_gap():
     """Comparing 2014 to 2016 would measure a two-year change as one year."""
     assert _consecutive_pairs([2013, 2014, 2016, 2017]) == [(2013, 2014), (2016, 2017)]
     assert _consecutive_pairs([2013]) == []
+
+
+def test_flag_mixed_era_leaves_a_pure_window_unflagged():
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 11,
+        [100.0 * (1.1**i) for i in range(11)],
+    )
+    flagged = flag_mixed_era(
+        cagr_metric(col("x"), 10), 10, flag=ReasonCode.CROSS_ERA_WINDOW
+    )
+    point = next(p for p in flagged(frame) if p.as_of_year == 2023)
+    assert point.value is not None
+    assert point.quality_flag is None
+
+
+def test_flag_mixed_era_keeps_the_value_and_attaches_the_flag():
+    """The softer sibling of require_single_era: publish, but say so."""
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 10 + ["simfin"],
+        [100.0 * (1.1**i) for i in range(11)],
+    )
+    flagged = flag_mixed_era(
+        cagr_metric(col("x"), 10), 10, flag=ReasonCode.CROSS_ERA_WINDOW
+    )
+    point = next(p for p in flagged(frame) if p.as_of_year == 2023)
+    assert point.value is not None
+    assert point.reason_code is None
+    assert point.quality_flag == ReasonCode.CROSS_ERA_WINDOW
+
+
+def test_flag_mixed_era_does_not_flag_an_already_null_point():
+    """A flag qualifies a value; with no value there is nothing to qualify."""
+    frame = _era_frame(
+        list(range(2013, 2024)),
+        ["legacy_compustat"] * 10 + ["simfin"],
+        [100.0] * 10 + [None],
+    )
+    flagged = flag_mixed_era(
+        cagr_metric(col("x"), 10), 10, flag=ReasonCode.CROSS_ERA_WINDOW
+    )
+    point = next(p for p in flagged(frame) if p.as_of_year == 2023)
+    assert point.value is None
+    assert point.reason_code == ReasonCode.MISSING_INPUT
+    assert point.quality_flag is None
+
+
+def test_flag_mixed_era_flags_when_provenance_is_missing():
+    """Absent provenance is never assumed pure, matching require_single_era."""
+    frame = pd.DataFrame(
+        {"fiscal_year": list(range(2013, 2024)), "x": [100.0 * (1.1**i) for i in range(11)]}
+    )
+    flagged = flag_mixed_era(
+        cagr_metric(col("x"), 10), 10, flag=ReasonCode.CROSS_ERA_WINDOW
+    )
+    point = next(p for p in flagged(frame) if p.as_of_year == 2023)
+    assert point.quality_flag == ReasonCode.CROSS_ERA_WINDOW

@@ -30,6 +30,7 @@ def _compute_rows(annual: pd.DataFrame, registry, pipeline_version: str) -> list
                         "metric_id": metric.metric_id,
                         "value": point.value,
                         "reason_code": point.reason_code,
+                        "quality_flag": point.quality_flag,
                         "window_length": metric.window_length,
                         "window_years_present": point.window_years_present,
                         "metric_version": metric.version,

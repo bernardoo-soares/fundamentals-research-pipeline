@@ -33,6 +33,8 @@ class Unit(StrEnum):
     USD_MILLIONS = "usd_millions"
     SHARES_MILLIONS = "shares_millions"
     USD_PER_SHARE = "usd_per_share"
+    # Dimensionless. Currently only `ajexq`, the split adjustment factor.
+    RATIO = "ratio"
 
 
 @dataclass(frozen=True)
@@ -494,12 +496,35 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         _FLOW,
     ),
     FieldEraSemantics(
+        field="ajexq",
+        legacy=EraSource(
+            "ajexq",
+            "Adjustment Factor (Cumulative) by Ex-Date",
+            Unit.RATIO,
+            Basis.POINT_IN_TIME,
+        ),
+        simfin=None,
+        eras_equivalent=False,
+        divergence_note=(
+            "SimFin publishes no adjustment factor; null in that era. Stored "
+            "for two reasons. First, it is what normalises the legacy per-share "
+            "series onto one basis (epspxq is published as-reported and never "
+            "restated after a split). Second, it preserves auditability: the "
+            "as-reported figure is recoverable as epspxq * ajexq, so adjusting "
+            "at Stage 1 discards nothing. Cumulative to the raw extract's most "
+            "recent date, so it compounds across successive splits -- NVDA runs "
+            "40 through FY2021 Q1 and 10 thereafter, i.e. the Jul-2021 4:1 "
+            "times the later Jun-2024 10:1."
+        ),
+    ),
+    FieldEraSemantics(
         field="epspxq",
         legacy=EraSource(
-            "epspxq",
-            "Earnings Per Share (Basic) - Excluding Extraordinary Items",
+            "epspxq / ajexq",
+            "basic EPS excluding extraordinary items, on one split basis",
             Unit.USD_PER_SHARE,
             _FLOW,
+            derived=True,
         ),
         simfin=EraSource(
             "Net Income (Common) / Shares (Basic)",
@@ -510,13 +535,31 @@ FIELD_ERA_SEMANTICS: tuple[FieldEraSemantics, ...] = (
         ),
         eras_equivalent=False,
         divergence_note=(
-            "SimFin publishes no EPS column at all, so the SimFin-era value is "
-            "derived rather than as-reported. Irreducible: disclosed, not fixed. "
-            "Measured impact on eps_up_year_fraction_10y at the 2022->2023 "
-            "transition (n=353): the direction flips for 5.7% of tickers, with "
-            "a median relative difference of only 0.23%, affecting at most 1 of "
-            "~9 pairs in a 10-year window. Materially milder than the cogsq "
-            "divergence, which is why this metric is not era-restricted."
+            "TWO SEPARATE DIVERGENCES, both disclosed rather than fixed.\n"
+            "(1) SimFin publishes no EPS column, so the SimFin-era value is "
+            "derived rather than as-reported. Measured at the 2022->2023 "
+            "transition (n=353): the direction flips for 5.7% of tickers at a "
+            "median relative difference of 0.23%, affecting at most 1 of ~9 "
+            "pairs in a 10-year window. Materially milder than the cogsq "
+            "divergence, which is why this metric is not era-restricted.\n"
+            "(2) SPLIT BASIS. Compustat states EPS as-reported and never "
+            "restates it, so the raw legacy series changes basis at every "
+            "split: 35.3% of tickers split at least once in 2005-2022, 2.40% "
+            "of ticker-years sum four quarters straddling two bases (AAPL "
+            "FY2020 read 10.97 against a published 3.31), and 11.1% of tickers "
+            "carried a wrong eps_up_year_fraction_10y -- always understated, "
+            "since a split can only ever invent a down year. The legacy era is "
+            "now divided by ajexq, which reproduces published restated EPS "
+            "exactly. The SimFin era CANNOT be normalised the same way: SimFin "
+            "publishes no factor and restates inconsistently -- of 20 splitters "
+            "checked at the boundary, 15 agree with the ajexq-adjusted legacy "
+            "basis (APH, AVGO, CMG, COO, CPRT, CTAS, DECK, LRCX, MNST, NVDA, "
+            "PCAR, SMCI, TECH, WRB, WSM) and 5 do not (WMT, ODFL, TPL, SRE, "
+            "PANW). No heuristic detector is used: a share-count step cannot "
+            "distinguish a split from merger-funded issuance, and EQT, TFC and "
+            "SJM step >1.4x in FY2024 for exactly that reason. Any window "
+            "reaching into the SimFin era therefore carries the "
+            "eps_basis_unverified quality flag."
         ),
     ),
     # --- Balance sheet (point-in-time stocks) ---

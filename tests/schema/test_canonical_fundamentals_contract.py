@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from fundamentals_pipeline.contracts.stage1_fundamentals_schema import (
+    ADJUSTMENT_FACTOR_FIELDS,
     CORE_RAW_FIELDS,
     EXTENDED_RAW_FIELDS,
     MONETARY_RAW_FIELDS,
@@ -92,12 +93,25 @@ def test_validate_stage1_frame_columns_rejects_wrong_leading_order() -> None:
 
 
 def test_all_published_raw_fields_have_exactly_one_unit_class() -> None:
-    classified = set(MONETARY_RAW_FIELDS + SHARE_COUNT_FIELDS + PER_SHARE_FIELDS)
+    classified = set(
+        MONETARY_RAW_FIELDS
+        + SHARE_COUNT_FIELDS
+        + PER_SHARE_FIELDS
+        + ADJUSTMENT_FACTOR_FIELDS
+    )
     raw_fields = set(CORE_RAW_FIELDS + SUPPORT_RAW_FIELDS + EXTENDED_RAW_FIELDS)
     assert classified == raw_fields
     assert set(MONETARY_RAW_FIELDS).isdisjoint(SHARE_COUNT_FIELDS)
     assert set(MONETARY_RAW_FIELDS).isdisjoint(PER_SHARE_FIELDS)
     assert set(SHARE_COUNT_FIELDS).isdisjoint(PER_SHARE_FIELDS)
+    assert set(MONETARY_RAW_FIELDS).isdisjoint(ADJUSTMENT_FACTOR_FIELDS)
+
+
+def test_adjustment_factor_is_never_scaled_as_money() -> None:
+    """`ajexq` is a ratio; scaling it by the unit divisor would corrupt it."""
+    assert "ajexq" in ADJUSTMENT_FACTOR_FIELDS
+    assert "ajexq" in SUPPORT_RAW_FIELDS
+    assert "ajexq" not in MONETARY_RAW_FIELDS
 
 
 def test_published_scale_uses_legacy_million_convention() -> None:

@@ -42,6 +42,9 @@ SUPPORT_RAW_FIELDS: tuple[str, ...] = (
     # Total cash dividends, year-to-date. Distinct from `dvpq`, which is
     # preferred dividends only (Compustat: "Dividends - Preferred/Preference").
     "dvy",
+    # Cumulative split / stock-dividend adjustment factor. See
+    # ADJUSTMENT_FACTOR_FIELDS.
+    "ajexq",
 )
 
 EXTENDED_RAW_FIELDS: tuple[str, ...] = (
@@ -91,10 +94,27 @@ SHARE_COUNT_FIELDS: tuple[str, ...] = (
     "cshopq",
     "cshoq",
 )
+
+# Dimensionless factors. Excluded from MONETARY_RAW_FIELDS for the same reason
+# per-share and share-count fields are: a ratio must never be multiplied by the
+# published unit scale.
+#
+# `ajexq` is Compustat's cumulative adjustment factor by ex-date. It is what
+# makes a per-share series comparable across a split: Compustat states EPS
+# as-reported and never restates it, publishing this factor instead, so
+# `epspxq / ajexq` is the split-consistent series. Measured 2026-07-29 against
+# published restated EPS: AAPL FY2020 3.2975 vs 3.31, GOOGL FY2022 4.5950 vs
+# 4.59, AMZN FY2022 -0.2680 vs (0.27).
+#
+# NEVER default a missing factor to 1. A null factor means the basis is
+# unknown, which is not the same as knowing it did not change.
+ADJUSTMENT_FACTOR_FIELDS: tuple[str, ...] = ("ajexq",)
+
 MONETARY_RAW_FIELDS: tuple[str, ...] = tuple(
     field
     for field in (*CORE_RAW_FIELDS, *SUPPORT_RAW_FIELDS, *EXTENDED_RAW_FIELDS)
-    if field not in (*PER_SHARE_FIELDS, *SHARE_COUNT_FIELDS)
+    if field
+    not in (*PER_SHARE_FIELDS, *SHARE_COUNT_FIELDS, *ADJUSTMENT_FACTOR_FIELDS)
 )
 PUBLISHED_UNIT_SCALE_NAME = "legacy_millions_scale"
 

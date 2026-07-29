@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from ..contracts.stage2_metrics_schema import TrendMetric
+from ..contracts.stage2_metrics_schema import ReasonCode, TrendMetric
 from .windows import (
     cagr_metric,
     col,
     consistency_fraction_metric,
     count_years_metric,
     direction_correspondence_metric,
+    flag_mixed_era,
     gross_margin_series,
     is_era_guarded,
     negative_equity_with_strong_earnings_metric,
@@ -22,6 +23,11 @@ from .windows import (
 GROSS_MARGIN_THRESHOLD = 0.40
 GROSS_MARGIN_WINDOW = 10
 STANDARD_WINDOW = 10
+
+# An N-year window's endpoints are N-1 years apart, so an era guard or flag over
+# a 10-year window spans 9. Named once rather than spelled `STANDARD_WINDOW - 1`
+# at each use (AGENTS.md S1.1).
+STANDARD_WINDOW_SPAN = STANDARD_WINDOW - 1
 
 # The catalog states a hard floor for capex_pct_net_income_avg10y ("both present,
 # >= 8 required") rather than the 0.8*n floor the other combinators apply.
@@ -49,14 +55,34 @@ REGISTRY: tuple[TrendMetric, ...] = (
         cagr_metric(col("req_q4"), 10),
     ),
     TrendMetric(
-        "eps_up_year_fraction_10y", "2", 10,
-        "fraction of YoY increases in epspxq_annual over the 10y window "
-        "(NOTE: epspxq is as-reported basic EPS in the legacy era but is "
-        "derived as NI(common)/shares(basic) in the SimFin era, which publishes "
-        "no EPS column at all. Measured FY2023: the 2022->2023 direction flips "
-        "for 5.7% of tickers at a median relative difference of 0.23%, "
-        "affecting at most 1 of ~9 pairs in the window.)",
-        up_year_fraction_metric(col("epspxq_annual"), 10),
+        "eps_up_year_fraction_10y", "3", 10,
+        "fraction of YoY increases in epspxq_annual over the 10y window.\n"
+        "SPLIT BASIS (fixed 2026-07-29, the reason for version 3): Compustat "
+        "publishes EPS as-reported and never restates it after a split, so the "
+        "legacy series changed basis at every split and a split registered as "
+        "a collapse in earnings. The error was ONE-DIRECTIONAL -- a split can "
+        "only ever invent a down year -- and companies split because the price "
+        "compounded, so this systematically penalised serial compounders. "
+        "Measured on 431 tickers: 11.1% carried a wrong value, median "
+        "understatement 0.111, worst 0.444 (AAPL read 0.333 against a true "
+        "0.778) and 1.6% flipped a >=0.80 verdict. Stage 1 now divides the "
+        "legacy series by ajexq, which reproduces published restated EPS "
+        "exactly (AAPL FY2020 3.2975 vs 3.31; GOOGL FY2022 4.5950 vs 4.59).\n"
+        "RESIDUAL, flagged not fixed: SimFin publishes no adjustment factor "
+        "and restates share counts inconsistently (15 of 20 boundary splitters "
+        "agree with the ajexq-adjusted basis, 5 do not), so a window reaching "
+        "into that era carries eps_basis_unverified. No heuristic detector is "
+        "used: a share-count step cannot tell a split from merger-funded "
+        "issuance, and EQT, TFC and SJM step >1.4x in FY2024 for that reason.\n"
+        "ALSO: epspxq is as-reported in the legacy era but derived as "
+        "NI(common)/shares(basic) in the SimFin era. Measured FY2023: the "
+        "2022->2023 direction flips for 5.7% of tickers at a median relative "
+        "difference of 0.23%, affecting at most 1 of ~9 pairs in the window.",
+        flag_mixed_era(
+            up_year_fraction_metric(col("epspxq_annual"), 10),
+            STANDARD_WINDOW_SPAN,
+            flag=ReasonCode.EPS_BASIS_UNVERIFIED,
+        ),
     ),
     TrendMetric(
         "net_income_up_year_fraction_10y", "1", 10,
@@ -69,7 +95,7 @@ REGISTRY: tuple[TrendMetric, ...] = (
         consistency_fraction_metric(ratio("niq_annual", "saleq_annual"), 0.20, 10),
     ),
     TrendMetric(
-        "buyback_years_10y", "1", 10,
+        "buyback_years_10y", "2", 10,
         "count of 10y window years with prstkcy_annual > 0 "
         "(NOTE: legacy Compustat prstkcy is GROSS repurchase while SimFin "
         "is NET equity flow, and SimFin publishes no gross leg, so this "
@@ -77,8 +103,14 @@ REGISTRY: tuple[TrendMetric, ...] = (
         "13.0% of tickers, 39:1 biased toward legacy seeing a buyback that "
         "SimFin does not, so the count reads LOW by up to 2 of 10 years for "
         "SimFin-served tickers. Post-2022 this counts net equity return, "
-        "not repurchase.)",
-        count_years_metric(col("prstkcy_annual"), 0.0, 10),
+        "not repurchase.) Version 2 attaches that measured, one-directional "
+        "bias to the row as cross_era_window rather than leaving it in this "
+        "docstring, where the UI could not see it.",
+        flag_mixed_era(
+            count_years_metric(col("prstkcy_annual"), 0.0, 10),
+            STANDARD_WINDOW_SPAN,
+            flag=ReasonCode.CROSS_ERA_WINDOW,
+        ),
     ),
     TrendMetric(
         "dividend_payer_years_10y", "2", 10,
